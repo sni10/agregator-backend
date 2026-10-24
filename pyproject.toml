@@ -1,0 +1,48 @@
+[project]
+name = "agregator-backend"
+version = "0.1.0"
+description = "IT / AI / Crypto news site backend (VPS): publishing API for the local pipeline, read API, admin"
+requires-python = ">=3.14"
+dependencies = [
+    "django>=6.1.2",
+    "django-cors-headers>=4.9.0",
+    "djangorestframework>=3.18.3",
+    "drf-spectacular>=0.30.0",
+    "gunicorn>=26.2.0",
+    "markdown>=3.11.2",
+    "nh3>=0.3.7",
+    "psycopg2-binary>=2.9.13",
+    "pydantic-settings>=2.16.1",
+    "whitenoise>=6.12.0",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "coverage>=7.17.0",
+    "unittest-xml-reporting>=4.0.0",
+]
+
+# Release versions come from Conventional Commits on main (python-semantic-release in CI):
+# fix -> patch, feat -> minor, "!" / BREAKING CHANGE -> major (minor while < 1.0). Source of truth: git tags vX.Y.Z.
+[tool.semantic_release]
+tag_format = "v{version}"
+commit_parser = "conventional"
+allow_zero_version = true
+major_on_zero = false
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+# CI: `coverage run manage.py test` -> reports in the test-reports artifact
+[tool.coverage.run]
+branch = true
+source = ["common", "config", "publications", "publishing_api", "public_api"]
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

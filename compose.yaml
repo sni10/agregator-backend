@@ -1,0 +1,35 @@
+# Development stack. All settings come from .env (see .env.example). Production: compose.prod.yaml (next step).
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm  # the same image as the pipeline and the gallery
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5434:5432"  # dev: uv runs and the IDE connect here
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      # .env holds the values for `uv run` on the host; inside the network these differ
+      DB_HOST: db
+      DB_PORT: "5432"
+    ports:
+      - "127.0.0.1:8002:8000"  # API and admin: http://localhost:8002/admin/, http://localhost:8002/api/docs/
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
