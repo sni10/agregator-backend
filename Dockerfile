@@ -17,11 +17,11 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY . .
 
 RUN useradd --system --create-home --uid 1000 app \
-    && mkdir -p staticfiles \
-    && chown -R app:app staticfiles
+    && mkdir -p staticfiles media \
+    && chown -R app:app staticfiles media
 USER app
 
 EXPOSE 8000
 ENTRYPOINT ["sh", "./docker/entrypoint.sh"]
-# One vCPU on the VPS: three workers; requests are short (no uploads, images come later)
+# One vCPU on the VPS: three workers; requests are short (an image upload is one ~300 KB photo)
 CMD ["gunicorn", "config.wsgi", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60", "--access-logfile", "-"]

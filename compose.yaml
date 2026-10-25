@@ -24,6 +24,8 @@ services:
       # .env holds the values for `uv run` on the host; inside the network these differ
       DB_HOST: db
       DB_PORT: "5432"
+    volumes:
+      - media:/app/media  # story images (WebP); in production Caddy serves this volume
     ports:
       - "127.0.0.1:8002:8000"  # API and admin: http://localhost:8002/admin/, http://localhost:8002/api/docs/
     depends_on:
@@ -33,3 +35,4 @@ services:
 
 volumes:
   pgdata:
+  media:

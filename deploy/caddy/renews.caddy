@@ -1,0 +1,97 @@
+# renews.me. Not a Caddyfile of its own: the gallery's Caddy (/srv/artai, ports 80/443) imports it from
+# /etc/caddy/sites/ (bind mount of /srv/renews/caddy). Upstreams on the shared network "edge": renews-app (gunicorn),
+# renews-front (SSR). Images: volume renews_media at /srv/renews-media. Global options (ACME email, Cloudflare
+# trusted proxies, {client_ip}) come from the gallery's Caddyfile; snippet names here start with renews_ so they never
+# clash with the gallery's.
+
+# HSTS raised in steps like the gallery's: 300 s -> 1 week -> 1 year (DEPLOY.md)
+(renews_hsts) {
+	header Strict-Transport-Security "max-age=300"
+}
+
+(renews_app) {
+	reverse_proxy renews-app:8000 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}
+
+# The site. Sitemaps and RSS are built by the API; Host must be one the app allows, links inside point here.
+renews.me {
+	import renews_hsts
+	encode zstd gzip
+	@assets path /assets/*
+	header @assets >Cache-Control "public, max-age=31536000, immutable"
+	handle /robots.txt {
+		respond "User-agent: *
+Disallow: /search
+Sitemap: https://renews.me/sitemap.xml
+Sitemap: https://renews.me/news-sitemap.xml
+" 200
+	}
+	@feeds path /sitemap.xml /news-sitemap.xml /rss.xml
+	handle @feeds {
+		reverse_proxy renews-app:8000 {
+			header_up Host api.renews.me
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
+	handle {
+		reverse_proxy renews-front:5173
+	}
+}
+
+www.renews.me {
+	import renews_hsts
+	redir https://renews.me{uri} permanent
+}
+
+# Read API for the browser, publishing API for the pipeline (X-Api-Key), images. The admin is on secure.renews.me only.
+# Robots: images are indexable (Google Images, og:image), JSON is not.
+api.renews.me {
+	import renews_hsts
+	@not_media not path /media/*
+	header @not_media X-Robots-Tag "noindex"
+	handle /robots.txt {
+		respond "User-agent: *
+Allow: /media/
+Disallow: /
+" 200
+	}
+	# one photo per request from the pipeline
+	request_body {
+		max_size 20MB
+	}
+	# WebP variants named after the stock photo: a URL never changes -> cache forever
+	handle_path /media/* {
+		root * /srv/renews-media
+		header Cache-Control "public, max-age=31536000, immutable"
+		header X-Content-Type-Options nosniff
+		file_server
+	}
+	handle /admin* {
+		respond 404
+	}
+	handle {
+		encode zstd gzip
+		import renews_app
+	}
+}
+
+# Admin with the review queue. Closed to robots like the gallery's: robots.txt, X-Robots-Tag, 403 to crawlers and
+# scripted clients before they reach the app.
+secure.renews.me {
+	import renews_hsts
+	header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
+	@robots header_regexp User-Agent (?i)(bot|crawl|spider|slurp|archiver|scrap|fetch|preview|curl|wget|python|httpclient|okhttp|go-http|java/|libwww|headless|^$)
+	@no_agent not header User-Agent *
+	route {
+		respond /robots.txt "User-agent: *
+Disallow: /
+" 200
+		respond @robots 403
+		respond @no_agent 403
+		respond /publishing/* 404
+		encode zstd gzip
+		import renews_app
+	}
+}

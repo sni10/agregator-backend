@@ -5,6 +5,7 @@
 *.pyc
 .env
 staticfiles
+media
 db.sqlite3
 reports
 .coverage
