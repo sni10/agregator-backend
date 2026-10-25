@@ -19,6 +19,28 @@ class Category(models.Model):
         return self.name
 
 
+class Image(models.Model):
+    """A stock photo, stored as WebP variants (publications/images.py). The pipeline picks and uploads it."""
+
+    class Source(models.TextChoices):
+        PIXABAY = 'pixabay', 'Pixabay'
+
+    external_id = models.CharField(max_length=100, unique=True, help_text="The stock site's id, e.g. pixabay-195893")
+    source = models.CharField(max_length=20, choices=Source)
+    author = models.CharField(max_length=200)
+    author_url = models.URLField(max_length=500, blank=True)
+    page_url = models.URLField(max_length=500, help_text='The photo on the stock site')
+    width = models.PositiveIntegerField(help_text='Of the largest variant')
+    height = models.PositiveIntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.external_id
+
+    def file_name(self, width: int) -> str:
+        return f'images/{self.external_id}-{width}.webp'
+
+
 class PublicationQuerySet(models.QuerySet):
     def published(self):
         return self.filter(status=Publication.Status.PUBLISHED, published_at__lte=timezone.now())
@@ -51,7 +73,9 @@ class Publication(models.Model):
     published_at = models.DateTimeField(null=True, blank=True, db_index=True,
                                         help_text='Set by the server the first time it is published')
     quality = models.JSONField(default=dict, blank=True, help_text="The pipeline's report: not a proof of anything")
-    image_queries = models.JSONField(default=list, blank=True, help_text='Stock photo searches (images come later)')
+    image_queries = models.JSONField(default=list, blank=True, help_text='Stock photo searches from the writer')
+    image = models.ForeignKey(Image, null=True, blank=True, on_delete=models.SET_NULL, related_name='publications',
+                              help_text='None: the front shows the category cover')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

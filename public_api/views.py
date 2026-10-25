@@ -29,7 +29,7 @@ class ReadView:
 
 
 def published():
-    return (Publication.objects.published().select_related('category')
+    return (Publication.objects.published().select_related('category', 'image')
             .annotate(source_count=Count('sources', distinct=True)))
 
 

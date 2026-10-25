@@ -79,6 +79,36 @@ class StaticSettings(Section):
     root: Path = Path('staticfiles')  # `collectstatic` target; relative to the project root
 
 
+class MediaSettings(Section):
+    """Story images (WebP variants made on upload). Caddy serves them in production, Django only with DEBUG."""
+
+    model_config = SettingsConfigDict(env_prefix='MEDIA_')
+
+    root: Path = Path('media')  # relative to the project root
+    url: str = '/media/'  # absolute in production (https://api.<domain>/media/): the front links to it directly
+
+    @field_validator('url')
+    @classmethod
+    def check_url(cls, url):
+        if not url.endswith('/'):
+            raise ValueError('must end with /')
+        return url
+
+
+class SiteSettings(Section):
+    """The public site (agregator-front): links in the sitemaps and the RSS feed point there, not to the API."""
+
+    model_config = SettingsConfigDict(env_prefix='SITE_')
+
+    url: str = 'http://localhost:5173'
+    name: str = 'Renews'  # Google News: the publication name in news-sitemap.xml
+
+    @field_validator('url')
+    @classmethod
+    def check_url(cls, url):
+        return check_origin(url)
+
+
 class PublishingSettings(Section):
     """Publishing API for the local pipeline (/publishing/*, header X-Api-Key)."""
 
@@ -99,4 +129,6 @@ class AppSettings(BaseModel):
     db: DatabaseSettings
     cors: CorsSettings
     static: StaticSettings
+    media: MediaSettings
+    site: SiteSettings
     publishing: PublishingSettings

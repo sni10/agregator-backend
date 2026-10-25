@@ -3,15 +3,17 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from publications import services
+from publications.images import BadImage, save_image
 from publications.models import Publication
 
 from .models import PublishAudit
 from .permissions import HasPublishingKey
-from .serializers import PublicationPayloadSerializer, PublicationStateSerializer
+from .serializers import ImageUploadSerializer, PublicationPayloadSerializer, PublicationStateSerializer
 
 AUDIT_RESULT_LENGTH = 500
 ACTIONS = {'POST': 'create', 'PUT': 'update', 'GET': 'get'}
@@ -21,13 +23,14 @@ KEY_ERROR = OpenApiResponse(description='Missing or invalid X-Api-Key, or publis
 class PublishingView(APIView):
     permission_classes = [HasPublishingKey]
     throttle_scope = 'publishing'
+    audit_action = ''  # instead of the one by method
 
     def finalize_response(self, request, response, *args, **kwargs):
         response = super().finalize_response(request, response, *args, **kwargs)
         PublishAudit.objects.create(
             external_id=kwargs.get('external_id') or _external_id(request),
             request_id=request.headers.get('X-Request-Id', '')[:100],
-            action=ACTIONS.get(request.method, request.method.lower()),
+            action=self.audit_action or ACTIONS.get(request.method, request.method.lower()),
             status_code=response.status_code,
             result=str(getattr(response, 'data', '') or '')[:AUDIT_RESULT_LENGTH],
         )
@@ -77,6 +80,31 @@ class PublicationDetailView(PublishingView):
         except services.RevisionConflict as exc:
             return Response({'detail': f'Revision {expected} is not current.', 'revision': exc.current},
                             status=status.HTTP_412_PRECONDITION_FAILED)
+        return _state(publication)
+
+
+class PublicationImageView(PublishingView):
+    parser_classes = [MultiPartParser]
+    audit_action = 'image'
+
+    @extend_schema(
+        request={'multipart/form-data': ImageUploadSerializer},
+        responses={200: PublicationStateSerializer, 400: OpenApiResponse(description='Not a usable image'),
+                   403: KEY_ERROR, 404: None},
+        description="Set the story's photo: stored as WebP 1200/600/320 px, 16:9. The same photo (by "
+                    '`external_id`) is converted once and reused. No new revision: the text is unchanged.',
+    )
+    def put(self, request, external_id):
+        publication = get_object_or_404(Publication, external_id=external_id)
+        upload = ImageUploadSerializer(data=request.data)
+        upload.is_valid(raise_exception=True)
+        meta = {key: value for key, value in upload.validated_data.items() if key != 'file'}
+        try:
+            image = save_image(upload.validated_data['file'], meta)
+        except BadImage as exc:
+            return Response({'file': [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+        publication.image = image
+        publication.save(update_fields=['image', 'updated_at'])
         return _state(publication)
 
 

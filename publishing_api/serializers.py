@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from publications.models import Category, Publication
+from publications.models import Category, Image, Publication
 
 EXTERNAL_ID = r'^[A-Za-z0-9][A-Za-z0-9._-]*$'
 
@@ -46,9 +46,35 @@ class PublicationPayloadSerializer(serializers.Serializer):
         return data
 
 
+class ImageUploadSerializer(serializers.Serializer):
+    """A stock photo for a story (multipart). The file is checked and converted by publications/images.py."""
+
+    MAX_BYTES = 15 * 1024 * 1024
+
+    file = serializers.FileField()
+    external_id = serializers.RegexField(EXTERNAL_ID, max_length=100)
+    source = serializers.ChoiceField(choices=Image.Source.choices)
+    author = serializers.CharField(max_length=200)
+    author_url = serializers.URLField(max_length=500, required=False, allow_blank=True, default='')
+    page_url = serializers.URLField(max_length=500)
+
+    def validate_file(self, file):
+        if file.size > self.MAX_BYTES:
+            raise serializers.ValidationError(f'Larger than {self.MAX_BYTES // 1024 // 1024} MB.')
+        return file
+
+    def validate(self, data):
+        for field in ('author_url', 'page_url'):
+            if data[field] and not data[field].startswith('https://'):
+                raise serializers.ValidationError({field: 'Only https links.'})
+        return data
+
+
 class PublicationStateSerializer(serializers.ModelSerializer):
     """What the pipeline gets back: enough to know where the story stands."""
 
+    image = serializers.SlugRelatedField(slug_field='external_id', read_only=True)
+
     class Meta:
         model = Publication
-        fields = ['external_id', 'slug', 'status', 'revision', 'published_at', 'updated_at']
+        fields = ['external_id', 'slug', 'status', 'revision', 'image', 'published_at', 'updated_at']

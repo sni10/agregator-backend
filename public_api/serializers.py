@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from publications.models import Category, Publication, PublicationSource
+from publications.images import variants
+from publications.models import Category, Image, Publication, PublicationSource
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -21,13 +22,33 @@ class SourceSerializer(serializers.ModelSerializer):
         fields = ['title', 'url', 'publisher', 'published_at']
 
 
+class ImageSerializer(serializers.ModelSerializer):
+    """`src` is the largest variant (also for og:image), `srcset` all of them; the credit goes under the photo."""
+
+    src = serializers.SerializerMethodField()
+    srcset = serializers.SerializerMethodField()
+    source = serializers.CharField(source='get_source_display')
+
+    class Meta:
+        model = Image
+        fields = ['src', 'srcset', 'width', 'height', 'author', 'author_url', 'source', 'page_url']
+
+    def get_src(self, image) -> str:
+        return variants(image)[0][1]
+
+    def get_srcset(self, image) -> str:
+        return ', '.join(f'{url} {width}w' for width, url in reversed(variants(image)))
+
+
 class PublicationListSerializer(serializers.ModelSerializer):
     category = CategorySerializer()
     source_count = serializers.IntegerField(read_only=True)
+    image = ImageSerializer(allow_null=True)
 
     class Meta:
         model = Publication
-        fields = ['slug', 'type', 'category', 'title', 'summary', 'event_at', 'published_at', 'source_count']
+        fields = ['slug', 'type', 'category', 'title', 'summary', 'image', 'event_at', 'published_at',
+                  'source_count']
 
 
 class PublicationDetailSerializer(PublicationListSerializer):

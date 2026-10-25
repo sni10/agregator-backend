@@ -97,9 +97,15 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / ENV.static.root
 
+MEDIA_URL = ENV.media.url
+MEDIA_ROOT = BASE_DIR / ENV.media.root
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PUBLISHING_API_KEY = ENV.publishing.api_key.get_secret_value()  # /publishing/*; empty -> publishing off
+
+SITE_URL = ENV.site.url  # sitemap.xml, news-sitemap.xml, rss.xml link to the front
+SITE_NAME = ENV.site.name
 
 CORS_ALLOWED_ORIGINS = ENV.cors.allowed_origins
 

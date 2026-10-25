@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
@@ -10,3 +12,6 @@ urlpatterns = [
     path('', include('publishing_api.urls')),
     path('', include('public_api.urls')),
 ]
+
+# Story images; in production Caddy serves MEDIA_ROOT itself (static() adds nothing when DEBUG is off)
+urlpatterns += static('media/', document_root=settings.MEDIA_ROOT)

@@ -11,6 +11,7 @@ dependencies = [
     "gunicorn>=26.2.0",
     "markdown>=3.11.2",
     "nh3>=0.3.7",
+    "pillow>=13.0.0",
     "psycopg2-binary>=2.9.13",
     "pydantic-settings>=2.16.1",
     "whitenoise>=6.12.0",
