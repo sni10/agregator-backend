@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
 from publications.images import variants
+
+from . import coins
 from publications.models import Category, Image, Publication, PublicationSource
 
 
@@ -55,10 +57,11 @@ class PublicationDetailSerializer(PublicationListSerializer):
     sources = SourceSerializer(many=True)
     previous = serializers.SerializerMethodField()
     follow_ups = serializers.SerializerMethodField()
+    coins = serializers.SerializerMethodField()
 
     class Meta(PublicationListSerializer.Meta):
         fields = [*PublicationListSerializer.Meta.fields, 'body_html', 'sources', 'previous', 'follow_ups',
-                  'updated_at']
+                  'coins', 'updated_at']
 
     def get_previous(self, publication) -> dict | None:
         previous = publication.previous
@@ -68,3 +71,23 @@ class PublicationDetailSerializer(PublicationListSerializer):
 
     def get_follow_ups(self, publication) -> list[dict]:
         return StoryLinkSerializer(publication.follow_ups.published().order_by('published_at'), many=True).data
+
+    def get_coins(self, publication) -> list[str]:
+        """CoinGecko ids of the coins the story names: the front shows their prices (GET /prices)."""
+        return coins.mentioned(publication.title, publication.summary, publication.body_md)
+
+
+class SuggestionSerializer(serializers.ModelSerializer):
+    category = serializers.SlugRelatedField(slug_field='slug', read_only=True)
+
+    class Meta:
+        model = Publication
+        fields = ['slug', 'title', 'category']
+
+
+class PriceSerializer(serializers.Serializer):
+    id = serializers.CharField(help_text="CoinGecko id, as in a story's `coins`")
+    symbol = serializers.CharField()
+    name = serializers.CharField()
+    usd = serializers.FloatField()
+    change_24h = serializers.FloatField(allow_null=True, help_text='Percent')

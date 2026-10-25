@@ -1,7 +1,7 @@
 """Stories on the site. They arrive from the local pipeline (publishing_api) and are read by the front (public_api).
 Source texts and embeddings stay on the owner's PC: here only what the site shows."""
 from django.conf import settings
-from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.contrib.postgres.search import SearchVector
 from django.db import models
 from django.utils import timezone
@@ -86,6 +86,8 @@ class Publication(models.Model):
         ordering = ['-published_at', '-created_at']
         indexes = [
             GinIndex(SearchVector('title', 'summary', 'body_md', config='english'), name='publication_search'),
+            # typo-tolerant search and suggestions (pg_trgm word similarity on titles)
+            GinIndex(OpClass('title', name='gin_trgm_ops'), name='publication_title_trgm'),
         ]
 
     def __str__(self):
