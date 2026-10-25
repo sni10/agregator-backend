@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'publications',
     'publishing_api',
     'public_api',
+    'contact',
 ]
 
 MIDDLEWARE = [
@@ -131,6 +132,11 @@ PASSWORD_RESET_TTL = timedelta(hours=1)  # life of the link in the "Reset your p
 # front's TERMS_VERSION whenever the text changes.
 TERMS_VERSION = '2026-10-25'
 
+CONTACT_EMAIL = ENV.contact.email  # POST /contact; empty -> stored in the admin only
+# POST /contact captcha; empty -> Cloudflare's test secret that always passes
+TURNSTILE_SECRET = ENV.turnstile.secret.get_secret_value() or '1x0000000000000000000000000000000AA'
+CONTACT_RETENTION_DAYS = 1095  # promised in the privacy policy (3 years); manage.py purge_old_contact_messages, cron
+
 CORS_ALLOWED_ORIGINS = ENV.cors.allowed_origins
 
 # Shared by all gunicorn workers of a container (the default LocMemCache is per process, which would multiply
@@ -155,6 +161,7 @@ REST_FRAMEWORK = {
         **{scope: '10/min' for scope in ('register', 'login', 'resend_confirmation', 'confirm_email', 'change_password',
                                            'delete_account', 'password_reset_confirm')},
         'password_reset': '5/hour',  # per IP and, separately, per email (EmailScopedRateThrottle)
+        'contact': '5/hour',
         'read': '300/min',  # per IP; the SSR server also calls through Caddy, so keep it well above one reader
     },
     # The app runs behind exactly one proxy (Caddy): it sends one X-Forwarded-For value, the client IP

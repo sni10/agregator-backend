@@ -124,6 +124,22 @@ class EmailSettings(Section):
     sender: str = 'Renews <noreply@localhost>'
 
 
+class ContactSettings(Section):
+    """POST /contact emails go here. Never sent to clients; the real address lives only in the server's .env."""
+
+    model_config = SettingsConfigDict(env_prefix='CONTACT_')
+
+    email: str = ''  # empty -> messages are only stored (admin), no email
+
+
+class TurnstileSettings(Section):
+    """Cloudflare Turnstile captcha on POST /contact. The site key is the front's, only the secret is here."""
+
+    model_config = SettingsConfigDict(env_prefix='TURNSTILE_')
+
+    secret: SecretStr = SecretStr('')  # empty -> Cloudflare's always-pass test key (dev, tests); set it in production
+
+
 class PublishingSettings(Section):
     """Publishing API for the local pipeline (/publishing/*, header X-Api-Key)."""
 
@@ -147,4 +163,6 @@ class AppSettings(BaseModel):
     media: MediaSettings
     site: SiteSettings
     email: EmailSettings
+    contact: ContactSettings
+    turnstile: TurnstileSettings
     publishing: PublishingSettings
