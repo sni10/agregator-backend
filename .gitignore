@@ -15,3 +15,6 @@ htmlcov/
 
 # local cheat sheet with credentials
 LOCAL.md
+
+# deploy notes: server IP, paths
+DEPLOY.md
