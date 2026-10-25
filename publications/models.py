@@ -1,5 +1,6 @@
 """Stories on the site. They arrive from the local pipeline (publishing_api) and are read by the front (public_api).
 Source texts and embeddings stay on the owner's PC: here only what the site shows."""
+from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVector
 from django.db import models
@@ -133,3 +134,18 @@ class PublicationRevision(models.Model):
 
     def __str__(self):
         return f'{self.publication} r{self.revision}'
+
+
+class Favorite(models.Model):
+    """A story in a reader's favorites. Deleting the story or the user deletes the record."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='favorites')
+    publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='favorited_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'publication'], name='unique_favorite_per_user')]
+        indexes = [models.Index(fields=['user', '-created_at'], name='favorite_user_recent')]
+
+    def __str__(self):
+        return f'{self.user} / {self.publication}'

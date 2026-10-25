@@ -1,11 +1,15 @@
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector
 from django.db.models import Count, F
+from django.shortcuts import get_object_or_404
 from django.utils.cache import patch_cache_control
-from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework import generics
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
+from rest_framework import generics, status
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from publications.models import Category, Publication
+from publications.models import Category, Favorite, Publication
 
 from .serializers import CategorySerializer, PublicationDetailSerializer, PublicationListSerializer
 
@@ -85,3 +89,51 @@ class SearchView(ReadView, generics.ListAPIView):
         vector = SearchVector('title', 'summary', 'body_md', config='english')
         return (published().annotate(search=vector, rank=SearchRank(vector, query)).filter(search=query)
                 .order_by(F('rank').desc(), '-published_at'))
+
+
+class Private:
+    """A reader's own data: never cached by browsers' shared caches, Cloudflare or the SSR micro-cache."""
+
+    permission_classes = [IsAuthenticated]
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        patch_cache_control(response, private=True, no_store=True)
+        return response
+
+
+class FavoriteListView(Private, generics.ListAPIView):
+    """The reader's favorites: published stories, the last added first."""
+
+    serializer_class = PublicationListSerializer
+    pagination_class = FeedPagination
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):  # schema generation: no real user
+            return Publication.objects.none()
+        return published().filter(favorited_by__user=self.request.user).order_by('-favorited_by__created_at')
+
+
+class FavoriteSlugsView(Private, APIView):
+    @extend_schema(summary='Slugs of all favorite stories: the front marks them in any list',
+                   responses={200: OpenApiResponse(description='["slug", ...]')})
+    def get(self, request):
+        slugs = (Favorite.objects.filter(user=request.user, publication__in=Publication.objects.published())
+                 .order_by('-created_at').values_list('publication__slug', flat=True))
+        return Response(list(slugs))
+
+
+class FavoriteView(Private, APIView):
+    @extend_schema(summary='Add a story to favorites', request=None,
+                   responses={204: OpenApiResponse(description='Added (or already there)'),
+                              404: OpenApiResponse(description='No published story with this slug')})
+    def put(self, request, slug):
+        publication = get_object_or_404(Publication.objects.published(), slug=slug)
+        Favorite.objects.get_or_create(user=request.user, publication=publication)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(summary='Remove a story from favorites',
+                   responses={204: OpenApiResponse(description='Removed (or was not there)')})
+    def delete(self, request, slug):
+        Favorite.objects.filter(user=request.user, publication__slug=slug).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

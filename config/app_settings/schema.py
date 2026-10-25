@@ -1,6 +1,6 @@
 """Typed configuration sections. Each section reads env vars with its own prefix and validates them."""
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -109,6 +109,21 @@ class SiteSettings(Section):
         return check_origin(url)
 
 
+class EmailSettings(Section):
+    """Account emails (confirmation, password reset). Production: Brevo SMTP, like the gallery."""
+
+    model_config = SettingsConfigDict(env_prefix='EMAIL_')
+
+    backend: Literal['console', 'smtp'] = 'console'  # console prints emails to stdout (development)
+    host: str = 'smtp-relay.brevo.com'
+    port: Port = 587
+    user: str = ''
+    password: SecretStr = SecretStr('')
+    use_tls: bool = True
+    timeout: int = Field(10, ge=1, description='SMTP connect/send timeout, seconds')
+    sender: str = 'Renews <noreply@localhost>'
+
+
 class PublishingSettings(Section):
     """Publishing API for the local pipeline (/publishing/*, header X-Api-Key)."""
 
@@ -131,4 +146,5 @@ class AppSettings(BaseModel):
     static: StaticSettings
     media: MediaSettings
     site: SiteSettings
+    email: EmailSettings
     publishing: PublishingSettings

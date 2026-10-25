@@ -1,6 +1,7 @@
 """Django settings. All environment-specific values come from env vars / .env, validated in config/app_settings."""
 import os
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 from .app_settings import load_settings
@@ -35,6 +36,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'corsheaders',
+    'accounts',
     'publications',
     'publishing_api',
     'public_api',
@@ -107,6 +109,28 @@ PUBLISHING_API_KEY = ENV.publishing.api_key.get_secret_value()  # /publishing/*;
 SITE_URL = ENV.site.url  # sitemap.xml, news-sitemap.xml, rss.xml link to the front
 SITE_NAME = ENV.site.name
 
+# Account emails (accounts/services/emails.py): links point to the front
+MAILERS = {
+    'default': {
+        'BACKEND': f'django.core.mail.backends.{ENV.email.backend}.EmailBackend',
+        'OPTIONS': {
+            'host': ENV.email.host,
+            'port': ENV.email.port,
+            'username': ENV.email.user,
+            'password': ENV.email.password.get_secret_value(),
+            'use_tls': ENV.email.use_tls,
+            'timeout': ENV.email.timeout,
+        } if ENV.email.backend == 'smtp' else {},
+    },
+}
+DEFAULT_FROM_EMAIL = ENV.email.sender
+FRONTEND_URL = SITE_URL
+PASSWORD_RESET_TTL = timedelta(hours=1)  # life of the link in the "Reset your password" email
+
+# Edition of the Terms of Use (renews.me/terms) a registration must accept. Change together with the
+# front's TERMS_VERSION whenever the text changes.
+TERMS_VERSION = '2026-10-25'
+
 CORS_ALLOWED_ORIGINS = ENV.cors.allowed_origins
 
 # Shared by all gunicorn workers of a container (the default LocMemCache is per process, which would multiply
@@ -120,12 +144,17 @@ CACHES = {
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    'DEFAULT_AUTHENTICATION_CLASSES': [],  # no users on the API: the pipeline has X-Api-Key, readers are anonymous
-    'UNAUTHENTICATED_USER': None,
+    # Readers: `Authorization: Bearer <access>` (accounts); no header -> anonymous. The pipeline has X-Api-Key,
+    # the admin uses Django sessions on its own.
+    'DEFAULT_AUTHENTICATION_CLASSES': ['accounts.authentication.BearerAccessTokenAuthentication'],
     'EXCEPTION_HANDLER': 'config.drf.exception_handler',
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],
     'DEFAULT_THROTTLE_RATES': {
-        'publishing': '120/min',
+        'publishing': '600/min',  # only requests with the right key get here: a bulk resend of stories and photos
+        # brute-force protection for auth endpoints (accounts.throttling.IPScopedRateThrottle, per IP and endpoint)
+        **{scope: '10/min' for scope in ('register', 'login', 'resend_confirmation', 'confirm_email', 'change_password',
+                                           'delete_account', 'password_reset_confirm')},
+        'password_reset': '5/hour',  # per IP and, separately, per email (EmailScopedRateThrottle)
         'read': '300/min',  # per IP; the SSR server also calls through Caddy, so keep it well above one reader
     },
     # The app runs behind exactly one proxy (Caddy): it sends one X-Forwarded-For value, the client IP
@@ -134,10 +163,13 @@ REST_FRAMEWORK = {
 
 # OpenAPI spec: /api/schema/ (YAML), /api/docs/ (Swagger UI), /api/redoc/; file: manage.py spectacular
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Agregator API',
+    'TITLE': 'Renews API',
     'DESCRIPTION': (
         'IT / AI / Crypto news.\n\n'
         'Public read API: published stories only, no auth.\n\n'
+        'Accounts and favorites: `Authorization: Bearer <access>` (access from /auth/login, /auth/confirm-email, '
+        '/auth/refresh; lives 15 minutes). Public endpoints work without the header, but with an expired or wrong '
+        'token any endpoint answers 401: refresh it through /auth/refresh or drop the header.\n\n'
         'Publishing API (`/publishing/*`): the local pipeline only, header `X-Api-Key` (PUBLISHING_API_KEY). '
         'Create is idempotent by `external_id`; update needs `If-Match: <revision>`.'
     ),

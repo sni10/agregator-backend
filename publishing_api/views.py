@@ -21,6 +21,7 @@ KEY_ERROR = OpenApiResponse(description='Missing or invalid X-Api-Key, or publis
 
 
 class PublishingView(APIView):
+    authentication_classes = []  # X-Api-Key only: no reader tokens here, and a wrong key answers 403
     permission_classes = [HasPublishingKey]
     throttle_scope = 'publishing'
     audit_action = ''  # instead of the one by method
