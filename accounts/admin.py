@@ -4,7 +4,7 @@ from django.contrib.auth.admin import UserAdmin
 
 from common.forms import PublicIdModelForm
 
-from .models import Profile
+from .models import NotificationSettings, Profile
 
 
 class ProfileInline(admin.StackedInline):
@@ -16,12 +16,19 @@ class ProfileInline(admin.StackedInline):
     verbose_name_plural = 'Публичная ссылка'
 
 
+class NotificationSettingsInline(admin.StackedInline):
+    model = NotificationSettings
+    can_delete = False
+    fields = ['email_digest', 'push', 'updated_at']
+    readonly_fields = ['updated_at']
+
+
 admin.site.unregister(get_user_model())
 
 
 @admin.register(get_user_model())
 class UserWithProfileAdmin(UserAdmin):
-    inlines = [ProfileInline]
+    inlines = [ProfileInline, NotificationSettingsInline]
     actions = ['reissue_links']
 
     def get_inline_instances(self, request, obj=None):

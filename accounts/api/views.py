@@ -1,6 +1,7 @@
 from dataclasses import asdict
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.cache import patch_cache_control
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
@@ -8,6 +9,7 @@ from rest_framework.exceptions import AuthenticationFailed, PermissionDenied, Va
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ..models import NotificationSettings
 from ..services.auth import AuthService, EmailNotConfirmed, InvalidCredentials
 from ..services.email_tokens import InvalidEmailToken
 from ..services.password_reset import PasswordResetService
@@ -17,7 +19,7 @@ from ..services.token_pairs import InvalidRefreshToken
 from ..throttling import EmailScopedRateThrottle, IPScopedRateThrottle
 from .serializers import (
     ChangedEmailSerializer, ChangeEmailSerializer, ChangePasswordSerializer, EmailSerializer, LoginSerializer,
-    MeSerializer, PasswordResetConfirmSerializer, PasswordResetSerializer, PasswordSerializer, RefreshSerializer,
+    MeSerializer, NotificationSettingsSerializer, PasswordResetConfirmSerializer, PasswordResetSerializer, PasswordSerializer, RefreshSerializer,
     RegisteredSerializer, RegisterSerializer, TokenPairSerializer, TokenSerializer,
 )
 
@@ -267,3 +269,32 @@ class ChangePasswordView(AuthThrottled):
         except DjangoValidationError as exc:
             raise api_fields(exc, {'current_password': 'currentPassword', 'new_password': 'newPassword'})
         return Response(asdict(pair))
+
+
+class NotificationSettingsView(APIView):
+    """The reader's choice of how to hear about follow-ups of their favorites. Only stored for now: the digest and
+    the push sender read it once they exist."""
+
+    permission_classes = [IsAuthenticated]
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        patch_cache_control(response, private=True, no_store=True)
+        return response
+
+    def own(self, request):
+        return NotificationSettings.objects.get_or_create(user=request.user)[0]
+
+    @extend_schema(summary='Notification settings (all off until turned on)',
+                   responses={200: NotificationSettingsSerializer, 401: UNAUTHORIZED})
+    def get(self, request):
+        return Response(NotificationSettingsSerializer(self.own(request)).data)
+
+    @extend_schema(summary='Change notification settings: only the fields sent',
+                   request=NotificationSettingsSerializer,
+                   responses={200: NotificationSettingsSerializer, 401: UNAUTHORIZED})
+    def patch(self, request):
+        serializer = NotificationSettingsSerializer(self.own(request), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

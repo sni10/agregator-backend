@@ -32,3 +32,20 @@ class Profile(PublicIdModel):
 
     def default_link_date(self):
         return self.user.date_joined
+
+
+class NotificationSettings(models.Model):
+    """How a reader wants news of their favorites: the gear on the Favorites page. All off until they turn one on.
+    Created on first read; deleted with the user."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name='notification_settings')
+    email_digest = models.BooleanField(default=False, help_text='Weekly email: follow-ups of their favorites')
+    push = models.BooleanField(default=False, help_text='Web push the moment a favorite gets a follow-up')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = 'notification settings'
+
+    def __str__(self):
+        return f'{self.user} notifications'

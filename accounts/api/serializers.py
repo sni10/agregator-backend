@@ -1,6 +1,8 @@
 from django.conf import settings
 from rest_framework import serializers
 
+from ..models import NotificationSettings
+
 MUST_ACCEPT = 'You must accept the Terms of Use.'
 TERMS_CHANGED = 'The Terms of Use have changed, reload the page.'
 
@@ -87,3 +89,13 @@ class ChangePasswordSerializer(serializers.Serializer):
 class TokenPairSerializer(serializers.Serializer):
     access = serializers.CharField(help_text='JWT для заголовка `Authorization: Bearer`, живёт 15 минут')
     refresh = serializers.CharField(help_text='Для POST /auth/refresh, живёт 7 дней, одноразовый')
+
+
+class NotificationSettingsSerializer(serializers.ModelSerializer):
+    emailDigest = serializers.BooleanField(source='email_digest', required=False,
+                                           help_text='Weekly email with follow-ups of the favorites')
+    push = serializers.BooleanField(required=False, help_text='Web push the moment a favorite gets a follow-up')
+
+    class Meta:
+        model = NotificationSettings
+        fields = ['emailDigest', 'push']
