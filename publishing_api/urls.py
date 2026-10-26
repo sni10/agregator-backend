@@ -8,5 +8,7 @@ urlpatterns = [
          name='publishing-detail'),
     path('publishing/publications/<str:external_id>/image', views.PublicationImageView.as_view(),
          name='publishing-image'),
+    path('publishing/publications/<str:external_id>/tags', views.PublicationTagsView.as_view(),
+         name='publishing-tags'),
     path('health', views.health, name='health'),
 ]

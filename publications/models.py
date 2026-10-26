@@ -42,6 +42,22 @@ class Image(models.Model):
         return f'images/{self.external_id}-{width}.webp'
 
 
+class Tag(models.Model):
+    """A subject that runs through many stories: a company, a product, a coin, a topic. The pipeline sets them."""
+
+    MIN_STORIES = 3  # a tag page with fewer is kept out of search engines (noindex, not in the sitemap)
+
+    slug = models.SlugField(max_length=60, unique=True)
+    name = models.CharField(max_length=60)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class PublicationQuerySet(models.QuerySet):
     def published(self):
         return self.filter(status=Publication.Status.PUBLISHED, published_at__lte=timezone.now())
@@ -77,6 +93,7 @@ class Publication(models.Model):
     image_queries = models.JSONField(default=list, blank=True, help_text='Stock photo searches from the writer')
     image = models.ForeignKey(Image, null=True, blank=True, on_delete=models.SET_NULL, related_name='publications',
                               help_text='None: the front shows the category cover')
+    tags = models.ManyToManyField(Tag, blank=True, related_name='publications')
     views = models.PositiveIntegerField(default=0, editable=False,
                                         help_text='Readers who opened it, once a day per IP; bots mostly left out')
     created_at = models.DateTimeField(auto_now_add=True)

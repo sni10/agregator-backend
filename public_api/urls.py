@@ -6,6 +6,7 @@ urlpatterns = [
     path('publications', views.PublicationListView.as_view(), name='publication-list'),
     path('publications/<slug:slug>', views.PublicationDetailView.as_view(), name='publication-detail'),
     path('publications/<slug:slug>/view', views.ViewCountView.as_view(), name='publication-view'),
+    path('tags/<slug:slug>', views.TagView.as_view(), name='tag'),
     path('categories', views.CategoryListView.as_view(), name='category-list'),
     path('search', views.SearchView.as_view(), name='search'),
     path('search/suggest', views.SuggestView.as_view(), name='search-suggest'),

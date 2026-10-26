@@ -1,9 +1,10 @@
 from django.contrib import admin, messages
+from django.db.models import Count
 from django.utils.html import format_html
 
 from . import services
 from .images import variants
-from .models import Category, Image, Publication, PublicationRevision, PublicationSource
+from .models import Category, Image, Publication, PublicationRevision, PublicationSource, Tag
 
 
 class SourceInline(admin.TabularInline):
@@ -34,9 +35,10 @@ class PublicationAdmin(admin.ModelAdmin):
     search_fields = ['title', 'external_id', 'slug']
     readonly_fields = ['external_id', 'revision', 'views', 'published_at', 'preview', 'photo', 'quality',
                        'image_queries', 'previous', 'created_at', 'updated_at']
-    fields = ['status', 'category', 'type', 'title', 'slug', 'summary', 'body_md', 'event_at', 'preview', 'image',
-              *[field for field in readonly_fields if field != 'preview']]
+    fields = ['status', 'category', 'type', 'title', 'slug', 'summary', 'body_md', 'event_at', 'tags', 'preview',
+              'image', *[field for field in readonly_fields if field != 'preview']]
     raw_id_fields = ['image']
+    autocomplete_fields = ['tags']
     inlines = [SourceInline, RevisionInline]
     actions = ['publish', 'withdraw']
     list_select_related = ['category']
@@ -78,6 +80,22 @@ class CategoryAdmin(admin.ModelAdmin):
     list_display = ['name', 'slug', 'position']
     prepopulated_fields = {'slug': ['name']}
 
+
+
+@admin.register(Tag)
+class TagAdmin(admin.ModelAdmin):
+    """Rename a tag or fix its slug here; the pipeline only puts tags on stories."""
+
+    list_display = ['name', 'slug', 'story_count', 'created_at']
+    search_fields = ['name', 'slug']
+    prepopulated_fields = {'slug': ['name']}
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(story_count=Count('publications'))
+
+    @admin.display(description='stories', ordering='story_count')
+    def story_count(self, tag):
+        return tag.story_count
 
 
 @admin.register(Image)

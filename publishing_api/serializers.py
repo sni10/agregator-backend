@@ -70,11 +70,16 @@ class ImageUploadSerializer(serializers.Serializer):
         return data
 
 
+class TagsPayloadSerializer(serializers.Serializer):
+    tags = serializers.ListField(child=serializers.CharField(max_length=60), max_length=8)
+
+
 class PublicationStateSerializer(serializers.ModelSerializer):
     """What the pipeline gets back: enough to know where the story stands."""
 
     image = serializers.SlugRelatedField(slug_field='external_id', read_only=True)
+    tags = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
 
     class Meta:
         model = Publication
-        fields = ['external_id', 'slug', 'status', 'revision', 'image', 'published_at', 'updated_at']
+        fields = ['external_id', 'slug', 'status', 'revision', 'image', 'tags', 'published_at', 'updated_at']

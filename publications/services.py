@@ -4,7 +4,7 @@ from django.utils.text import slugify
 
 from common.markdown import render
 
-from .models import Publication, PublicationRevision, PublicationSource
+from .models import Publication, PublicationRevision, PublicationSource, Tag
 
 SLUG_LENGTH = 100
 
@@ -46,6 +46,18 @@ def update(publication: Publication, data: dict, expected_revision: int) -> Publ
         _save_sources(publication, data['sources'])
         _save_revision(publication, PublicationRevision.Author.PIPELINE)
     return publication
+
+
+def set_tags(publication: Publication, names: list[str]) -> None:
+    """The story's tags, by name; a tag is the same whatever its spelling ("OpenAI", "openai"). New ones are
+    created with the first spelling seen. No new revision: the text is unchanged."""
+    tags = {}
+    for name in names:
+        name = ' '.join(name.split())[:60]
+        slug = slugify(name)[:60].strip('-')
+        if slug and slug not in tags:
+            tags[slug] = Tag.objects.get_or_create(slug=slug, defaults={'name': name})[0]
+    publication.tags.set(tags.values())
 
 
 def save_admin_edit(publication: Publication) -> None:

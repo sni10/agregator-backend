@@ -4,12 +4,13 @@ from datetime import timedelta
 from email.utils import format_datetime
 
 from django.conf import settings
+from django.db.models import Count, Q
 from django.shortcuts import render
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
 
 from publications.images import variants
-from publications.models import Category, Publication
+from publications.models import Category, Publication, Tag
 
 MAX_AGE = 300
 NEWS_WINDOW = timedelta(days=2)  # Google News reads only stories of the last two days
@@ -25,9 +26,17 @@ def stories():
 def sitemap(request):
     items = [{'loc': page} for page in PAGES]
     items += [{'loc': f'/{category.slug}'} for category in Category.objects.all()]
+    items += [{'loc': f'/tag/{slug}'} for slug in indexed_tags()]
     items += [{'loc': f'/news/{story.slug}', 'lastmod': story.updated_at, 'image': _cover(story)}
               for story in stories()]
     return _xml(request, 'feeds/sitemap.xml', {'items': items})
+
+
+def indexed_tags() -> list[str]:
+    """Slugs of the tags with enough published stories for a page worth indexing."""
+    count = Count('publications', filter=Q(publications__in=Publication.objects.published()))
+    return list(Tag.objects.annotate(count=count).filter(count__gte=Tag.MIN_STORIES).order_by('slug')
+                .values_list('slug', flat=True))
 
 
 def news_sitemap(request):

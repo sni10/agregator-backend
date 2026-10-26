@@ -3,13 +3,32 @@ from rest_framework import serializers
 from publications.images import variants
 
 from . import coins
-from publications.models import Category, Image, Publication, PublicationSource
+from publications.models import Category, Image, Publication, PublicationSource, Tag
 
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
         fields = ['slug', 'name']
+
+
+class TagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tag
+        fields = ['slug', 'name']
+
+
+class TagPageSerializer(TagSerializer):
+    """`indexed`: enough stories for search engines; the front adds noindex otherwise."""
+
+    count = serializers.IntegerField()
+    indexed = serializers.SerializerMethodField()
+
+    class Meta(TagSerializer.Meta):
+        fields = [*TagSerializer.Meta.fields, 'count', 'indexed']
+
+    def get_indexed(self, tag) -> bool:
+        return tag.count >= Tag.MIN_STORIES
 
 
 class StoryLinkSerializer(serializers.ModelSerializer):
@@ -58,10 +77,11 @@ class PublicationDetailSerializer(PublicationListSerializer):
     previous = serializers.SerializerMethodField()
     follow_ups = serializers.SerializerMethodField()
     coins = serializers.SerializerMethodField()
+    tags = TagSerializer(many=True)
 
     class Meta(PublicationListSerializer.Meta):
         fields = [*PublicationListSerializer.Meta.fields, 'body_html', 'sources', 'previous', 'follow_ups',
-                  'coins', 'updated_at']
+                  'coins', 'tags', 'updated_at']
 
     def get_previous(self, publication) -> dict | None:
         previous = publication.previous

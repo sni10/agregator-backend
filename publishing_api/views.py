@@ -13,7 +13,8 @@ from publications.models import Publication
 
 from .models import PublishAudit
 from .permissions import HasPublishingKey
-from .serializers import ImageUploadSerializer, PublicationPayloadSerializer, PublicationStateSerializer
+from .serializers import (ImageUploadSerializer, PublicationPayloadSerializer, PublicationStateSerializer,
+                          TagsPayloadSerializer)
 
 AUDIT_RESULT_LENGTH = 500
 ACTIONS = {'POST': 'create', 'PUT': 'update', 'GET': 'get'}
@@ -106,6 +107,23 @@ class PublicationImageView(PublishingView):
             return Response({'file': [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
         publication.image = image
         publication.save(update_fields=['image', 'updated_at'])
+        return _state(publication)
+
+
+class PublicationTagsView(PublishingView):
+    audit_action = 'tags'
+
+    @extend_schema(
+        request=TagsPayloadSerializer,
+        responses={200: PublicationStateSerializer, 403: KEY_ERROR, 404: None},
+        description="Replace the story's tags (names; new ones are created). No new revision: the text is unchanged.",
+    )
+    def put(self, request, external_id):
+        publication = get_object_or_404(Publication, external_id=external_id)
+        payload = TagsPayloadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        services.set_tags(publication, payload.validated_data['tags'])
+        publication.save(update_fields=['updated_at'])
         return _state(publication)
 
 

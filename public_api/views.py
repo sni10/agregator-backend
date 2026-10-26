@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from django.core.cache import cache
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector, TrigramWordSimilarity
-from django.db.models import Count, F
+from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
@@ -16,11 +16,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from publications.models import Category, Favorite, Publication
+from publications.models import Category, Favorite, Publication, Tag
 
 from . import coins
 from .serializers import (CategorySerializer, PriceSerializer, PublicationDetailSerializer,
-                          PublicationListSerializer, SuggestionSerializer)
+                          PublicationListSerializer, SuggestionSerializer, TagPageSerializer)
 
 LIST_MAX_AGE = 60  # seconds: the feed changes a few times a day, the SSR micro-cache sits in front anyway
 DETAIL_MAX_AGE = 300
@@ -49,6 +49,7 @@ def published():
 @extend_schema(parameters=[
     OpenApiParameter('category', str, description='it | ai | crypto'),
     OpenApiParameter('type', str, description='event | digest'),
+    OpenApiParameter('tag', str, description='A tag slug'),
 ])
 class PublicationListView(ReadView, generics.ListAPIView):
     """The feed: published stories, newest first."""
@@ -62,6 +63,8 @@ class PublicationListView(ReadView, generics.ListAPIView):
             stories = stories.filter(category__slug=category)
         if kind := self.request.query_params.get('type'):
             stories = stories.filter(type=kind)
+        if tag := self.request.query_params.get('tag'):
+            stories = stories.filter(tags__slug=tag)
         return stories.order_by('-published_at', '-id')
 
 
@@ -73,7 +76,7 @@ class PublicationDetailView(ReadView, generics.RetrieveAPIView):
     max_age = DETAIL_MAX_AGE
 
     def get_queryset(self):
-        return published().select_related('previous').prefetch_related('sources')
+        return published().select_related('previous').prefetch_related('sources', 'tags')
 
 
 BOT = re.compile(r'bot|crawl|spider|slurp|preview|headless|lighthouse', re.IGNORECASE)
@@ -100,6 +103,17 @@ class ViewCountView(APIView):
             if cache.add(mark, 1, timeout=24 * 3600):
                 stories.update(views=F('views') + 1)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TagView(ReadView, generics.RetrieveAPIView):
+    """A tag's page heading; its stories come from /publications?tag=<slug>. 404 without published stories."""
+
+    serializer_class = TagPageSerializer
+    lookup_field = 'slug'
+
+    def get_queryset(self):
+        stories = Count('publications', filter=Q(publications__in=Publication.objects.published()))
+        return Tag.objects.annotate(count=stories).filter(count__gt=0)
 
 
 class CategoryListView(ReadView, generics.ListAPIView):
