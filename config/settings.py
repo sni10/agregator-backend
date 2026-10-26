@@ -140,11 +140,13 @@ CONTACT_RETENTION_DAYS = 1095  # promised in the privacy policy (3 years); manag
 CORS_ALLOWED_ORIGINS = ENV.cors.allowed_origins
 
 # Shared by all gunicorn workers of a container (the default LocMemCache is per process, which would multiply
-# throttle limits by the worker count). Only throttle counters are stored; losing them on restart is fine.
+# throttle limits by the worker count). Throttle counters, coin prices and the once-a-day marks of story views;
+# losing them on restart is fine. MAX_ENTRIES: the default 300 would drop the view marks on a busy day.
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
         'LOCATION': Path(tempfile.gettempdir()) / 'agregator-cache',
+        'OPTIONS': {'MAX_ENTRIES': 20000},
     }
 }
 

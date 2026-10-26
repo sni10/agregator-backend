@@ -50,7 +50,7 @@ class PublicationListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publication
         fields = ['slug', 'type', 'category', 'title', 'summary', 'image', 'event_at', 'published_at',
-                  'source_count']
+                  'source_count', 'views']
 
 
 class PublicationDetailSerializer(PublicationListSerializer):

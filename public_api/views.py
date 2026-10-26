@@ -1,6 +1,8 @@
+import hashlib
 import re
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector, TrigramWordSimilarity
 from django.db.models import Count, F
 from django.shortcuts import get_object_or_404
@@ -11,6 +13,7 @@ from rest_framework import generics, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from publications.models import Category, Favorite, Publication
@@ -71,6 +74,32 @@ class PublicationDetailView(ReadView, generics.RetrieveAPIView):
 
     def get_queryset(self):
         return published().select_related('previous').prefetch_related('sources')
+
+
+BOT = re.compile(r'bot|crawl|spider|slurp|preview|headless|lighthouse', re.IGNORECASE)
+
+
+class ViewCountView(APIView):
+    """A reader opened the story: the front sends this from the browser after the page shows (most bots run no
+    scripts, the rest are told apart by User-Agent). One view per IP, story and day; the IP is kept only hashed,
+    in the cache. Always 204 for a published story, counted or not."""
+
+    authentication_classes = []  # anyone; a stale token must not turn this into a 401
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'read'
+
+    @extend_schema(request=None, responses={204: None, 404: None})
+    def post(self, request, slug):
+        stories = Publication.objects.published().filter(slug=slug)
+        if not stories.exists():
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        if not BOT.search(request.headers.get('User-Agent', '')):
+            day = timezone.now().date().isoformat()
+            ip = ScopedRateThrottle().get_ident(request)
+            mark = 'view:' + hashlib.sha256(f'{ip}|{slug}|{day}'.encode()).hexdigest()
+            if cache.add(mark, 1, timeout=24 * 3600):
+                stories.update(views=F('views') + 1)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class CategoryListView(ReadView, generics.ListAPIView):

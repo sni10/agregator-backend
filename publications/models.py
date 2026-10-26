@@ -77,6 +77,8 @@ class Publication(models.Model):
     image_queries = models.JSONField(default=list, blank=True, help_text='Stock photo searches from the writer')
     image = models.ForeignKey(Image, null=True, blank=True, on_delete=models.SET_NULL, related_name='publications',
                               help_text='None: the front shows the category cover')
+    views = models.PositiveIntegerField(default=0, editable=False,
+                                        help_text='Readers who opened it, once a day per IP; bots mostly left out')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

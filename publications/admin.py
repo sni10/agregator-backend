@@ -28,11 +28,12 @@ class RevisionInline(admin.TabularInline):
 class PublicationAdmin(admin.ModelAdmin):
     """The review queue: Status = Needs review. Publish or withdraw from the list, or edit the text first."""
 
-    list_display = ['title', 'category', 'status', 'source_count', 'revision', 'published_at', 'created_at']
+    list_display = ['title', 'category', 'status', 'source_count', 'views', 'revision', 'published_at',
+                    'created_at']
     list_filter = ['status', 'category', 'type']
     search_fields = ['title', 'external_id', 'slug']
-    readonly_fields = ['external_id', 'revision', 'published_at', 'preview', 'photo', 'quality', 'image_queries',
-                       'previous', 'created_at', 'updated_at']
+    readonly_fields = ['external_id', 'revision', 'views', 'published_at', 'preview', 'photo', 'quality',
+                       'image_queries', 'previous', 'created_at', 'updated_at']
     fields = ['status', 'category', 'type', 'title', 'slug', 'summary', 'body_md', 'event_at', 'preview', 'image',
               *[field for field in readonly_fields if field != 'preview']]
     raw_id_fields = ['image']
