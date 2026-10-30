@@ -106,6 +106,7 @@ MEDIA_ROOT = BASE_DIR / ENV.media.root
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PUBLISHING_API_KEY = ENV.publishing.api_key.get_secret_value()  # /publishing/*; empty -> publishing off
+PUBLISHING_SPREAD = timedelta(minutes=ENV.publishing.spread_minutes)  # publications/services.py: next_slot
 
 SITE_URL = ENV.site.url  # sitemap.xml, news-sitemap.xml, rss.xml link to the front
 SITE_NAME = ENV.site.name

@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from publications.models import Publication, PublicationRevision
@@ -65,6 +68,20 @@ class PublishingApiTests(TestCase):
 
         story = Publication.objects.get()
         self.assertEqual((story.status, story.published_at), ('review', None))
+
+    @override_settings(PUBLISHING_SPREAD=timedelta(minutes=30))
+    def test_a_batch_goes_live_one_by_one(self):
+        start = timezone.now()
+        for number in range(3):
+            self.client.post(URL, payload(external_id=f'event-{number}', title=f'Story {number}'), format='json')
+        self.client.post(URL, payload(external_id='held', title='Held', status='review'), format='json')
+
+        times = list(Publication.objects.filter(status='published').order_by('published_at')
+                     .values_list('published_at', flat=True))
+        self.assertLess(times[0] - start, timedelta(seconds=5))  # the first at once
+        self.assertEqual([b - a for a, b in zip(times, times[1:])], [timedelta(minutes=30)] * 2)
+        self.assertIsNone(Publication.objects.get(external_id='held').published_at)
+        self.assertEqual(APIClient().get('/publications').data['count'], 1)  # the rest are not due yet
 
     def test_a_story_needs_a_source_and_a_known_category(self):
         response = self.client.post(URL, payload(sources=[], category='sports'), format='json')
