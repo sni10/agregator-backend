@@ -19,8 +19,8 @@ from rest_framework.views import APIView
 from publications.models import Category, Favorite, Publication, Tag
 
 from . import coins
-from .serializers import (CategorySerializer, PriceSerializer, PublicationDetailSerializer,
-                          PublicationListSerializer, SuggestionSerializer, TagPageSerializer)
+from .serializers import (CategorySerializer, HomeSerializer, PriceSerializer, PublicationDetailSerializer,
+                          PublicationListSerializer, SuggestionSerializer, TagPageSerializer, TrendingTagSerializer)
 
 LIST_MAX_AGE = 60  # seconds: the feed changes a few times a day, the SSR micro-cache sits in front anyway
 DETAIL_MAX_AGE = 300
@@ -42,8 +42,44 @@ class ReadView:
 
 
 def published():
-    return (Publication.objects.published().select_related('category', 'image')
+    return (Publication.objects.published().select_related('category', 'image').prefetch_related('sources')
             .annotate(source_count=Count('sources', distinct=True)))
+
+
+NEWEST = ('-published_at', '-id')
+
+
+class HomeView(ReadView, APIView):
+    """The front page in one request. The top story is the one with the most sources among the newest, the next
+    newest stand beside it, then the latest, then a block per category; a story shows up only once. Most read:
+    the stories of the last days readers opened most."""
+
+    CANDIDATES = 20  # the top story is picked among these newest
+    LEAD = 4  # the top story and three beside it
+    LATEST = 6
+    SECTION = 6
+    MOST_READ = 5
+    MOST_READ_WINDOW = timedelta(days=3)
+
+    @extend_schema(responses=HomeSerializer)
+    def get(self, request):
+        newest = list(published().order_by(*NEWEST)[:self.CANDIDATES + self.LATEST])
+        top = max(newest[:self.CANDIDATES], key=lambda s: s.source_count, default=None)  # the newest of a tie
+        rest = [story for story in newest if story is not top]
+        lead = ([top] if top else []) + rest[:self.LEAD - 1]
+        latest = rest[self.LEAD - 1:self.LEAD - 1 + self.LATEST]
+        shown = [story.pk for story in lead + latest]
+
+        sections = []
+        for category in Category.objects.all():
+            stories = list(published().filter(category=category).exclude(pk__in=shown).order_by(*NEWEST)[:self.SECTION])
+            if stories:
+                sections.append({'category': category, 'stories': stories})
+
+        most_read = (published().filter(views__gt=0, published_at__gte=timezone.now() - self.MOST_READ_WINDOW)
+                     .order_by('-views', *NEWEST)[:self.MOST_READ])
+        data = {'lead': lead, 'latest': latest, 'sections': sections, 'most_read': most_read}
+        return Response(HomeSerializer(data, context={'request': request}).data)
 
 
 @extend_schema(parameters=[
@@ -65,7 +101,7 @@ class PublicationListView(ReadView, generics.ListAPIView):
             stories = stories.filter(type=kind)
         if tag := self.request.query_params.get('tag'):
             stories = stories.filter(tags__slug=tag)
-        return stories.order_by('-published_at', '-id')
+        return stories.order_by(*NEWEST)
 
 
 class PublicationDetailView(ReadView, generics.RetrieveAPIView):
@@ -103,6 +139,21 @@ class ViewCountView(APIView):
             if cache.add(mark, 1, timeout=24 * 3600):
                 stories.update(views=F('views') + 1)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TrendingTagsView(ReadView, generics.ListAPIView):
+    """The subjects of the moment: tags with the most stories published in the last week (two at least), for the
+    row under the menu."""
+
+    serializer_class = TrendingTagSerializer
+    pagination_class = None
+    LIMIT = 10
+    WINDOW = timedelta(days=7)
+
+    def get_queryset(self):
+        recent = Publication.objects.published().filter(published_at__gte=timezone.now() - self.WINDOW)
+        return (Tag.objects.annotate(count=Count('publications', filter=Q(publications__in=recent)))
+                .filter(count__gte=2).order_by('-count', 'name')[:self.LIMIT])
 
 
 class TagView(ReadView, generics.RetrieveAPIView):

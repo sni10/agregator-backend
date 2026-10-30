@@ -3,9 +3,11 @@ from django.urls import path
 from . import feeds, views
 
 urlpatterns = [
+    path('home', views.HomeView.as_view(), name='home'),
     path('publications', views.PublicationListView.as_view(), name='publication-list'),
     path('publications/<slug:slug>', views.PublicationDetailView.as_view(), name='publication-detail'),
     path('publications/<slug:slug>/view', views.ViewCountView.as_view(), name='publication-view'),
+    path('tags', views.TrendingTagsView.as_view(), name='trending-tags'),
     path('tags/<slug:slug>', views.TagView.as_view(), name='tag'),
     path('categories', views.CategoryListView.as_view(), name='category-list'),
     path('search', views.SearchView.as_view(), name='search'),

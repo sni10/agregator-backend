@@ -31,6 +31,13 @@ class TagPageSerializer(TagSerializer):
         return tag.count >= Tag.MIN_STORIES
 
 
+class TrendingTagSerializer(TagSerializer):
+    count = serializers.IntegerField(help_text='Stories of the last days')
+
+    class Meta(TagSerializer.Meta):
+        fields = [*TagSerializer.Meta.fields, 'count']
+
+
 class StoryLinkSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publication
@@ -64,12 +71,17 @@ class ImageSerializer(serializers.ModelSerializer):
 class PublicationListSerializer(serializers.ModelSerializer):
     category = CategorySerializer()
     source_count = serializers.IntegerField(read_only=True)
+    publishers = serializers.SerializerMethodField()
     image = ImageSerializer(allow_null=True)
 
     class Meta:
         model = Publication
         fields = ['slug', 'type', 'category', 'title', 'summary', 'image', 'event_at', 'published_at',
-                  'source_count', 'views']
+                  'source_count', 'publishers', 'views']
+
+    def get_publishers(self, publication) -> list[str]:
+        """Who wrote the sources, each once, in the story's order: the card names them."""
+        return list(dict.fromkeys(source.publisher for source in publication.sources.all()))
 
 
 class PublicationDetailSerializer(PublicationListSerializer):
@@ -111,3 +123,15 @@ class PriceSerializer(serializers.Serializer):
     name = serializers.CharField()
     usd = serializers.FloatField()
     change_24h = serializers.FloatField(allow_null=True, help_text='Percent')
+
+
+class HomeSectionSerializer(serializers.Serializer):
+    category = CategorySerializer()
+    stories = PublicationListSerializer(many=True)
+
+
+class HomeSerializer(serializers.Serializer):
+    lead = PublicationListSerializer(many=True, help_text='The top story first, then the ones beside it')
+    latest = PublicationListSerializer(many=True)
+    sections = HomeSectionSerializer(many=True, help_text='A block per category, without the stories above')
+    most_read = PublicationListSerializer(many=True, help_text='Of the last days; empty while nobody reads')
