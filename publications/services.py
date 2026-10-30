@@ -1,9 +1,5 @@
 """Create and update stories from the pipeline's payload (validated by publishing_api's serializer)."""
-from datetime import datetime
-
-from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Max
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -92,21 +88,11 @@ def _apply(publication: Publication, data: dict) -> None:
     if publication.status == Publication.Status.WITHDRAWN:
         return
     if data['status'] == Publication.Status.PUBLISHED:
-        publication.published_at = publication.published_at or next_slot()
+        # dated by its sources (when the news broke), not by when the pipeline's batch arrived
+        publication.published_at = publication.published_at or min(data['event_at'] or timezone.now(), timezone.now())
         publication.publish()
     else:
         publication.status = Publication.Status.REVIEW
-
-
-def next_slot() -> datetime:
-    """When a story from the pipeline goes live. The pipeline sends a whole batch at once: with PUBLISHING_SPREAD
-    each one is due that long after the last story already due, so the batch appears through the day (the public
-    API shows a story only from its published_at). Without it: now."""
-    now = timezone.now()
-    if not settings.PUBLISHING_SPREAD:
-        return now
-    last = Publication.objects.filter(status=Publication.Status.PUBLISHED).aggregate(last=Max('published_at'))['last']
-    return max(now, last + settings.PUBLISHING_SPREAD) if last else now
 
 
 def _save_sources(publication: Publication, sources: list[dict]) -> None:

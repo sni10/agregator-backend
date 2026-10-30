@@ -146,9 +146,6 @@ class PublishingSettings(Section):
     model_config = SettingsConfigDict(env_prefix='PUBLISHING_')
 
     api_key: SecretStr = SecretStr('')  # empty -> the API is off (always 403). Generate: openssl rand -hex 32
-    # minutes between stories the pipeline publishes in one batch: they go live one by one, not all at once.
-    # 0 -> each at once
-    spread_minutes: int = Field(0, ge=0, le=240)
 
     @field_validator('api_key')
     @classmethod
