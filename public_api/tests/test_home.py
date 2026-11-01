@@ -35,10 +35,10 @@ class HomeTests(TestCase):
 
         home = self.client.get('/home').data
 
-        self.assertEqual(slugs(home['lead']), ['ai-5', 'ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-6', 'ai-7'])
-        self.assertEqual(slugs(home['latest']), ['ai-8', 'ai-9', 'ai-10', 'ai-11', 'it-1', 'it-2'])
+        self.assertEqual(slugs(home['lead']), ['ai-5', 'ai-1', 'ai-2', 'ai-3', 'ai-4', 'ai-6'])
+        self.assertEqual(slugs(home['latest']), ['ai-7', 'ai-8', 'ai-9', 'ai-10', 'ai-11', 'it-1'])
         self.assertEqual([(s['category']['slug'], slugs(s['stories'])) for s in home['sections']],
-                         [('it', ['it-3'])])  # crypto has none: no block
+                         [('it', ['it-2', 'it-3'])])  # crypto has none: no block
         self.assertEqual(home['most_read'], [])
         self.assertIn('max-age=60', self.client.get('/home')['Cache-Control'])
 
@@ -81,12 +81,12 @@ class PlacementTests(TestCase):
         return model.objects.create(publication=Publication.objects.get(slug=slug), **fields)
 
     def test_without_editors_the_most_sourced_leads_and_the_newest_stand_beside(self):
-        self.assertEqual(self.lead(), ['s-9', 's-1', 's-2', 's-3', 's-4', 's-5', 's-6'])
+        self.assertEqual(self.lead(), ['s-9', 's-1', 's-2', 's-3', 's-4', 's-5'])
 
     def test_the_editors_top_story_leads_for_a_week(self):
         top = self.place(TopStory, 's-12')
         self.assertEqual(top.ends_at, top.starts_at + timedelta(days=7))
-        self.assertEqual(self.lead(), ['s-12', 's-1', 's-2', 's-3', 's-4', 's-5', 's-6'])
+        self.assertEqual(self.lead(), ['s-12', 's-1', 's-2', 's-3', 's-4', 's-5'])
 
         top.starts_at, top.ends_at = days(-8), days(-1)
         top.save()
@@ -112,7 +112,7 @@ class PlacementTests(TestCase):
 
         home = APIClient().get('/home').data
 
-        self.assertEqual(slugs(home['lead']), ['s-9', 's-12', 's-13', 's-1', 's-2', 's-3', 's-4'])
+        self.assertEqual(slugs(home['lead']), ['s-9', 's-12', 's-13', 's-1', 's-2', 's-3'])
         self.assertNotIn('s-12', slugs(home['latest']))
 
     def test_dates_out_of_order_are_refused(self):

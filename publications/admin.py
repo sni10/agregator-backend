@@ -115,7 +115,7 @@ class TopStoryAdmin(PlacementAdmin):
 
 @admin.register(LeadPick)
 class LeadPickAdmin(PlacementAdmin):
-    """The six stories beside the top story, at places 1-6, for a week (or the dates set). Free places get the
+    """The five stories beside the top story, at places 1-5, for a week (or the dates set). Free places get the
     newest stories."""
 
     fields = ['position', *PlacementAdmin.fields]

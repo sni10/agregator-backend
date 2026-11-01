@@ -222,7 +222,7 @@ class TopStory(Placement):
 class LeadPick(Placement):
     """A story in the column beside the top story, at a given place; the free places get the newest stories."""
 
-    PLACES = 6
+    PLACES = 5
 
     position = models.PositiveSmallIntegerField(choices=[(n, n) for n in range(1, PLACES + 1)], default=1)
 
