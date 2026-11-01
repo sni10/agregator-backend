@@ -13,7 +13,7 @@ RATIO = (16, 9)
 FORMATS = {'JPEG', 'PNG', 'WEBP'}
 MIN_WIDTH = 600  # smaller looks blurry on the story page
 MAX_PIXELS = 40_000_000
-QUALITY = 80
+QUALITY = 72  # 80 gave up to 370 KB for a noisy stock photo at 1200 px; 72 is ~14% lighter, hardly visible
 
 Pillow.MAX_IMAGE_PIXELS = MAX_PIXELS
 
