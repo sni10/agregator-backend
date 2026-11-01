@@ -1,8 +1,11 @@
 """Stories on the site. They arrive from the local pipeline (publishing_api) and are read by the front (public_api).
 Source texts and embeddings stay on the owner's PC: here only what the site shows."""
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.contrib.postgres.search import SearchVector
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -170,3 +173,60 @@ class Favorite(models.Model):
 
     def __str__(self):
         return f'{self.user} / {self.publication}'
+
+
+class PlacementQuerySet(models.QuerySet):
+    def active(self, now=None):
+        now = now or timezone.now()
+        return self.filter(starts_at__lte=now, ends_at__gt=now)
+
+
+class Placement(models.Model):
+    """A story an editor put in a place on the front page for a while (a week unless set). A story not published
+    (yet, or any more) is skipped; when no placement is live the front page picks on its own."""
+
+    WEEK = timedelta(days=7)
+
+    publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='+')
+    starts_at = models.DateTimeField(default=timezone.now, help_text='Can be in the future')
+    ends_at = models.DateTimeField(blank=True, help_text='Empty: a week after the start')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = PlacementQuerySet.as_manager()
+
+    class Meta:
+        abstract = True
+
+    def __str__(self):
+        return str(self.publication)
+
+    def clean(self):
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValidationError({'ends_at': 'Must be after the start.'})
+
+    def save(self, *args, **kwargs):
+        if self.ends_at is None:
+            self.ends_at = self.starts_at + self.WEEK
+        super().save(*args, **kwargs)
+
+
+class TopStory(Placement):
+    """The top story of the front page. When several are live, the one that started last wins."""
+
+    class Meta:
+        ordering = ['-starts_at', '-id']
+        verbose_name = 'top story'
+        verbose_name_plural = 'top stories'
+
+
+class LeadPick(Placement):
+    """A story in the column beside the top story, at a given place; the free places get the newest stories."""
+
+    PLACES = 6
+
+    position = models.PositiveSmallIntegerField(choices=[(n, n) for n in range(1, PLACES + 1)], default=1)
+
+    class Meta:
+        ordering = ['position', '-starts_at', '-id']
+        verbose_name = 'story beside the top story'
+        verbose_name_plural = 'stories beside the top story'

@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from publications.models import Category, Favorite, Publication, Tag
+from publications.models import Category, Favorite, LeadPick, Publication, Tag, TopStory
 
 from . import coins
 from .serializers import (CategorySerializer, HomeSerializer, PriceSerializer, PublicationDetailSerializer,
@@ -49,13 +49,21 @@ def published():
 NEWEST = ('-published_at', '-id')
 
 
+def placed(placement) -> list[Publication]:
+    """The published stories of the live placements of a kind, in their order, each once."""
+    ids = list(placement.objects.active().values_list('publication_id', flat=True))
+    stories = published().in_bulk(ids)
+    return [stories[pk] for pk in dict.fromkeys(ids) if pk in stories]
+
+
 class HomeView(ReadView, APIView):
-    """The front page in one request. The top story is the one with the most sources among the newest, the next
-    newest stand beside it, then the latest, then a block per category; a story shows up only once. Most read:
-    the stories of the last days readers opened most."""
+    """The front page in one request. The top story is the one an editor set (TopStory), else the one with the most
+    sources among the newest; beside it the stories editors placed (LeadPick), the free places get the next newest;
+    then the latest, then a block per category; a story shows up only once. Most read: the stories of the last days
+    readers opened most."""
 
     CANDIDATES = 20  # the top story is picked among these newest
-    LEAD = 4  # the top story and three beside it
+    BESIDE = LeadPick.PLACES  # stories beside the top story
     LATEST = 6
     SECTION = 6
     MOST_READ = 5
@@ -63,11 +71,14 @@ class HomeView(ReadView, APIView):
 
     @extend_schema(responses=HomeSerializer)
     def get(self, request):
-        newest = list(published().order_by(*NEWEST)[:self.CANDIDATES + self.LATEST])
-        top = max(newest[:self.CANDIDATES], key=lambda s: s.source_count, default=None)  # the newest of a tie
-        rest = [story for story in newest if story is not top]
-        lead = ([top] if top else []) + rest[:self.LEAD - 1]
-        latest = rest[self.LEAD - 1:self.LEAD - 1 + self.LATEST]
+        newest = list(published().order_by(*NEWEST)[:self.CANDIDATES + self.BESIDE + self.LATEST])
+        tops = placed(TopStory)
+        top = tops[0] if tops else max(newest[:self.CANDIDATES], key=lambda s: s.source_count, default=None)
+        picks = [story for story in placed(LeadPick) if story != top][:self.BESIDE]
+        rest = [story for story in newest if story != top and story not in picks]
+        free = self.BESIDE - len(picks)
+        lead = ([top] if top else []) + picks + rest[:free]
+        latest = rest[free:free + self.LATEST]
         shown = [story.pk for story in lead + latest]
 
         sections = []

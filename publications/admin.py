@@ -1,10 +1,11 @@
 from django.contrib import admin, messages
 from django.db.models import Count
+from django.utils import timezone
 from django.utils.html import format_html
 
 from . import services
 from .images import variants
-from .models import Category, Image, Publication, PublicationRevision, PublicationSource, Tag
+from .models import Category, Image, LeadPick, Publication, PublicationRevision, PublicationSource, Tag, TopStory
 
 
 class SourceInline(admin.TabularInline):
@@ -79,6 +80,48 @@ class PublicationAdmin(admin.ModelAdmin):
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ['name', 'slug', 'position']
     prepopulated_fields = {'slug': ['name']}
+
+
+class PlacementAdmin(admin.ModelAdmin):
+    fields = ['publication', 'starts_at', 'ends_at']
+    autocomplete_fields = ['publication']
+    list_select_related = ['publication']
+    actions = ['end_now']
+
+    @admin.display(description='state')
+    def state(self, placement):
+        now = timezone.now()
+        if placement.publication.status != Publication.Status.PUBLISHED:
+            return 'skipped: the story is not published'
+        if placement.starts_at > now:
+            return 'scheduled'
+        return 'live' if placement.ends_at > now else 'ended'
+
+    @admin.action(description='End selected now (the front page picks on its own again)')
+    def end_now(self, request, queryset):
+        now = timezone.now()
+        queryset.filter(ends_at__gt=now).update(ends_at=now)
+        queryset.filter(starts_at__gt=now).update(starts_at=now)  # scheduled ones: never shown
+        self.message_user(request, 'Ended.', messages.SUCCESS)
+
+
+@admin.register(TopStory)
+class TopStoryAdmin(PlacementAdmin):
+    """The top story of the front page for a week (or the dates set). When none is live, the story with the most
+    sources among the newest leads, as without an editor."""
+
+    list_display = ['publication', 'state', 'starts_at', 'ends_at']
+
+
+@admin.register(LeadPick)
+class LeadPickAdmin(PlacementAdmin):
+    """The six stories beside the top story, at places 1-6, for a week (or the dates set). Free places get the
+    newest stories."""
+
+    fields = ['position', *PlacementAdmin.fields]
+    list_display = ['position', 'publication', 'state', 'starts_at', 'ends_at']
+    list_display_links = ['publication']
+    list_editable = ['position']
 
 
 
