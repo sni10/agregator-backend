@@ -77,7 +77,7 @@ class PublicationListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publication
         fields = ['slug', 'type', 'category', 'title', 'summary', 'image', 'event_at', 'published_at',
-                  'source_count', 'publishers', 'views']
+                  'source_count', 'publishers', 'views', 'rating']
 
     def get_publishers(self, publication) -> list[str]:
         """Who wrote the sources, each once, in the story's order: the card names them."""

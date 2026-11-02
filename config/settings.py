@@ -164,6 +164,7 @@ REST_FRAMEWORK = {
                                            'delete_account', 'password_reset_confirm')},
         'password_reset': '5/hour',  # per IP and, separately, per email (EmailScopedRateThrottle)
         'contact': '5/hour',
+        'rate': '60/min',  # per reader: like holds; the 100 points per story is the real limit
         'read': '300/min',  # per IP; the SSR server also calls through Caddy, so keep it well above one reader
     },
     # The app runs behind exactly one proxy (Caddy): it sends one X-Forwarded-For value, the client IP

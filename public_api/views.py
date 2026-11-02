@@ -1,22 +1,25 @@
 import hashlib
+import hmac
 import re
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.cache import cache
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector, TrigramWordSimilarity
+from django.db import transaction
 from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import generics, status
+from rest_framework import generics, serializers, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from publications.models import Category, Favorite, LeadPick, Publication, Tag, TopStory
+from publications.models import Category, Favorite, LeadPick, Publication, Rating, Tag, TopStory
 
 from . import coins
 from .serializers import (CategorySerializer, HomeSerializer, PriceSerializer, PublicationDetailSerializer,
@@ -335,3 +338,59 @@ class FavoriteView(Private, APIView):
     def delete(self, request, slug):
         Favorite.objects.filter(user=request.user, publication__slug=slug).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RatingSerializer(serializers.Serializer):
+    rating = serializers.IntegerField(read_only=True, help_text="The story's rating: all readers' points")
+    given = serializers.IntegerField(read_only=True, help_text="This reader's points for the story")
+    left = serializers.IntegerField(read_only=True, help_text='What they can still give, of 100')
+
+
+class RatingAddSerializer(serializers.Serializer):
+    points = serializers.IntegerField(min_value=1, max_value=Rating.MAX, help_text='One hold of the like button')
+
+
+class RatingView(APIView):
+    """Signed in or not. A guest is their IP: everyone behind one NAT shares the 100 points, a VPN hop gets new ones.
+    # ponytail: IP for guests, add a captcha or a guest cookie if farming shows up in the ratings."""
+
+    throttle_scope = 'rate'
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        patch_cache_control(response, private=True, no_store=True)  # the answer is this reader's
+        return response
+
+    def reader(self, request) -> dict:
+        if request.user.is_authenticated:
+            return {'user': request.user}
+        ip = ScopedRateThrottle().get_ident(request)
+        return {'user': None, 'guest': hmac.new(settings.SECRET_KEY.encode(), ip.encode(), 'sha256').hexdigest()}
+
+    def answer(self, publication, given):
+        return Response(RatingSerializer({'rating': publication.rating, 'given': given,
+                                          'left': Rating.MAX - given}).data)
+
+    @extend_schema(summary="The story's rating and this reader's points", responses={200: RatingSerializer})
+    def get(self, request, slug):
+        publication = get_object_or_404(Publication.objects.published(), slug=slug)
+        given = Rating.objects.filter(publication=publication, **self.reader(request)).values_list('points', flat=True)
+        return self.answer(publication, given.first() or 0)
+
+    @extend_schema(summary='Like a story: add the points of one hold, cut to what is left of the 100',
+                   request=RatingAddSerializer, responses={200: RatingSerializer, 404: None})
+    def post(self, request, slug):
+        data = RatingAddSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        publication = get_object_or_404(Publication.objects.published(), slug=slug)
+        with transaction.atomic():
+            reader = self.reader(request)
+            Rating.objects.get_or_create(publication=publication, **reader)
+            rating = Rating.objects.select_for_update().get(publication=publication, **reader)  # two tabs at once
+            added = min(data.validated_data['points'], Rating.MAX - rating.points)
+            if added:
+                rating.points += added
+                rating.save(update_fields=['points', 'updated_at'])
+                Publication.objects.filter(pk=publication.pk).update(rating=F('rating') + added)
+        publication.refresh_from_db(fields=['rating'])
+        return self.answer(publication, rating.points)
