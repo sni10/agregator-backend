@@ -135,3 +135,5 @@ class HomeSerializer(serializers.Serializer):
     latest = PublicationListSerializer(many=True)
     sections = HomeSectionSerializer(many=True, help_text='A block per category, without the stories above')
     most_read = PublicationListSerializer(many=True, help_text='Of the last days; empty while nobody reads')
+    top_rated = PublicationListSerializer(many=True, help_text="Of the last week, by readers' like points (not "
+                                                               "the random start); empty while nobody likes")

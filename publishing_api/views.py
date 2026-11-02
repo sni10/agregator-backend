@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser
@@ -14,7 +17,7 @@ from publications.models import Publication
 from .models import PublishAudit
 from .permissions import HasPublishingKey
 from .serializers import (ImageUploadSerializer, PublicationPayloadSerializer, PublicationStateSerializer,
-                          TagsPayloadSerializer)
+                          ReactionSerializer, TagsPayloadSerializer)
 
 AUDIT_RESULT_LENGTH = 500
 ACTIONS = {'POST': 'create', 'PUT': 'update', 'GET': 'get'}
@@ -125,6 +128,27 @@ class PublicationTagsView(PublishingView):
         services.set_tags(publication, payload.validated_data['tags'])
         publication.save(update_fields=['updated_at'])
         return _state(publication)
+
+
+class ReactionView(PublishingView):
+    """How readers took the stories: for the pipeline to learn which topics and sources land."""
+
+    audit_action = 'reactions'
+    MAX_DAYS = 365
+
+    @extend_schema(
+        parameters=[OpenApiParameter('days', int, description='Stories published in the last N days (default 30)')],
+        responses={200: ReactionSerializer(many=True), 403: KEY_ERROR},
+        description="Published stories of the period, most liked first. points: readers' like points without the "
+                    'random start the site shows; readers: how many gave them; views: once a day per IP.',
+    )
+    def get(self, request):
+        days = request.query_params.get('days', '')
+        days = min(int(days), self.MAX_DAYS) if days.isdigit() and int(days) > 0 else 30
+        stories = (Publication.objects.published().with_points()
+                   .filter(published_at__gte=timezone.now() - timedelta(days=days))
+                   .order_by('-readers_points', '-views', '-published_at'))
+        return Response(ReactionSerializer(stories, many=True).data)
 
 
 def health(request):

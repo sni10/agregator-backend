@@ -63,7 +63,7 @@ class HomeView(ReadView, APIView):
     """The front page in one request. The top story is the one an editor set (TopStory), else the one with the most
     sources among the newest; beside it the stories editors placed (LeadPick), the free places get the next newest;
     then the latest, then a block per category; a story shows up only once. Most read: the stories of the last days
-    readers opened most."""
+    readers opened most. Top rated: the stories of the last week readers gave the most like points."""
 
     CANDIDATES = 20  # the top story is picked among these newest
     BESIDE = LeadPick.PLACES  # stories beside the top story
@@ -71,6 +71,8 @@ class HomeView(ReadView, APIView):
     SECTION = 6
     MOST_READ = 5
     MOST_READ_WINDOW = timedelta(days=3)
+    TOP_RATED = 5
+    TOP_RATED_WINDOW = timedelta(days=7)
 
     @extend_schema(responses=HomeSerializer)
     def get(self, request):
@@ -92,7 +94,11 @@ class HomeView(ReadView, APIView):
 
         most_read = (published().filter(views__gt=0, published_at__gte=timezone.now() - self.MOST_READ_WINDOW)
                      .order_by('-views', *NEWEST)[:self.MOST_READ])
-        data = {'lead': lead, 'latest': latest, 'sections': sections, 'most_read': most_read}
+        top_rated = (published().with_points()
+                     .filter(readers_points__gt=0, published_at__gte=timezone.now() - self.TOP_RATED_WINDOW)
+                     .order_by('-readers_points', *NEWEST)[:self.TOP_RATED])
+        data = {'lead': lead, 'latest': latest, 'sections': sections, 'most_read': most_read,
+                'top_rated': top_rated}
         return Response(HomeSerializer(data, context={'request': request}).data)
 
 
@@ -215,7 +221,8 @@ class SearchPagination(FeedPagination):
     OpenApiParameter('category', str, description='it | ai | crypto'),
     OpenApiParameter('since', str, enum=list(SINCE), description='Published in the last day, week, month, year'),
     OpenApiParameter('sources', int, description='At least this many sources'),
-    OpenApiParameter('sort', str, enum=['relevance', 'newest'], description='Default: relevance (newest without q)'),
+    OpenApiParameter('sort', str, enum=['relevance', 'newest', 'top'],
+                     description="Default: relevance (newest without q); top: readers' like points"),
 ])
 class SearchView(ReadView, generics.ListAPIView):
     """Full-text search over published stories (PostgreSQL, English) with filters. When the words match nothing,
@@ -240,8 +247,12 @@ class SearchView(ReadView, generics.ListAPIView):
         text = params.get('q', '').strip()[:200]  # websearch syntax: "exact phrase", -word, or
         filtered = any(params.get(name) for name in ('category', 'since', 'sources'))
         newest = ('-published_at', '-id')
+        top = params.get('sort') == 'top'
         if not words(text):
-            return self.filtered().order_by(*newest) if filtered else Publication.objects.none()
+            if not filtered:
+                return Publication.objects.none()
+            return self.filtered().with_points().order_by('-readers_points', *newest) if top else \
+                self.filtered().order_by(*newest)
 
         query = SearchQuery(text, search_type='websearch', config='english')
         vector = SearchVector('title', 'summary', 'body_md', config='english')
@@ -252,6 +263,8 @@ class SearchView(ReadView, generics.ListAPIView):
                        .filter(rank__gte=FUZZY_MIN))
         if params.get('sort') == 'newest':
             return stories.order_by(*newest)
+        if top:
+            return stories.with_points().order_by('-readers_points', F('rank').desc(), *newest)
         return stories.order_by(F('rank').desc(), *newest)
 
 

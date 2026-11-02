@@ -8,6 +8,8 @@ from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.contrib.postgres.search import SearchVector
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Count, OuterRef, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 
@@ -70,6 +72,13 @@ def starting_rating() -> int:
 class PublicationQuerySet(models.QuerySet):
     def published(self):
         return self.filter(status=Publication.Status.PUBLISHED, published_at__lte=timezone.now())
+
+    def with_points(self):
+        """readers_points: the like points readers gave, without the random start in rating; readers: how many."""
+        def given(total):
+            return Coalesce(Subquery(Rating.objects.filter(publication=OuterRef('pk')).values('publication')
+                                     .annotate(total=total).values('total')), 0)
+        return self.annotate(readers_points=given(Sum('points')), readers=given(Count('id')))
 
 
 class Publication(models.Model):
