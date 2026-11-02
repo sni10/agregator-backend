@@ -1,5 +1,6 @@
 """Stories on the site. They arrive from the local pipeline (publishing_api) and are read by the front (public_api).
 Source texts and embeddings stay on the owner's PC: here only what the site shows."""
+import random
 from datetime import timedelta
 
 from django.conf import settings
@@ -61,6 +62,11 @@ class Tag(models.Model):
         return self.name
 
 
+def starting_rating() -> int:
+    """A new story does not start at zero likes: 800..2500, the readers' points come on top."""
+    return random.randint(800, 2500)
+
+
 class PublicationQuerySet(models.QuerySet):
     def published(self):
         return self.filter(status=Publication.Status.PUBLISHED, published_at__lte=timezone.now())
@@ -99,8 +105,8 @@ class Publication(models.Model):
     tags = models.ManyToManyField(Tag, blank=True, related_name='publications')
     views = models.PositiveIntegerField(default=0, editable=False,
                                         help_text='Readers who opened it, once a day per IP; bots mostly left out')
-    rating = models.PositiveIntegerField(default=0, editable=False,
-                                         help_text="Readers' like points: the sum of Rating.points")
+    rating = models.PositiveIntegerField(default=starting_rating, editable=False,
+                                         help_text="A random start plus readers' like points (Rating.points)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -179,8 +185,8 @@ class Favorite(models.Model):
 
 class Rating(models.Model):
     """The like points a reader gave a story: the held like button, up to MAX in all, over as many holds as they
-    like. A reader is a user or, signed out, a guest: their IP, kept only hashed. Publication.rating is the sum,
-    kept in step by public_api (RatingView)."""
+    like. A reader is a user or, signed out, a guest: their IP, kept only hashed. Publication.rating is a random start
+    plus their sum, kept in step by public_api (RatingView)."""
 
     MAX = 100
 

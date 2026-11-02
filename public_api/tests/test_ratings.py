@@ -15,7 +15,7 @@ def reader(email):
 
 class RatingApiTests(TestCase):
     def test_points_add_up_to_the_cap(self):
-        story('model-x')
+        story('model-x', rating=0)  # no random start: exact sums
         anna, bob = reader('anna@example.com'), reader('bob@example.com')
 
         self.assertEqual(anna.post('/publications/model-x/rating', {'points': 70}).data, {'rating': 70, 'given': 70, 'left': 30})
@@ -26,7 +26,7 @@ class RatingApiTests(TestCase):
         self.assertEqual(APIClient().get('/publications/model-x').data['rating'], 200)
 
     def test_bad_points_and_strangers(self):
-        story('model-x')
+        story('model-x', rating=0)  # no random start: exact sums
         story('pending', status=Publication.Status.REVIEW)
         anna = reader('anna@example.com')
 
@@ -36,7 +36,7 @@ class RatingApiTests(TestCase):
         self.assertEqual(anna.get('/publications/model-x/rating').data, {'rating': 0, 'given': 0, 'left': 100})
 
     def test_guests_by_ip(self):
-        story('model-x')
+        story('model-x', rating=0)  # no random start: exact sums
         home = APIClient(REMOTE_ADDR='10.0.0.1')
         cafe = APIClient(REMOTE_ADDR='10.0.0.2')
 
@@ -47,3 +47,8 @@ class RatingApiTests(TestCase):
                          {'rating': 115, 'given': 5, 'left': 95})  # signed in: their own 100
         self.assertEqual(Rating.objects.filter(user=None).count(), 2)
         self.assertNotIn('10.0.0.1', Rating.objects.values_list('guest', flat=True))  # hashed
+
+
+class StartingRatingTests(TestCase):
+    def test_a_new_story_starts_between_800_and_2500(self):
+        self.assertTrue(800 <= story('model-x').rating <= 2500)
