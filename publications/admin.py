@@ -30,11 +30,11 @@ class RevisionInline(admin.TabularInline):
 class PublicationAdmin(admin.ModelAdmin):
     """The review queue: Status = Needs review. Publish or withdraw from the list, or edit the text first."""
 
-    list_display = ['title', 'category', 'status', 'source_count', 'views', 'revision', 'published_at',
+    list_display = ['title', 'category', 'status', 'source_count', 'views', 'rating', 'readers_points', 'revision', 'published_at',
                     'created_at']
     list_filter = ['status', 'category', 'type']
     search_fields = ['title', 'external_id', 'slug']
-    readonly_fields = ['external_id', 'revision', 'views', 'published_at', 'preview', 'photo', 'quality',
+    readonly_fields = ['external_id', 'revision', 'views', 'rating', 'published_at', 'preview', 'photo', 'quality',
                        'image_queries', 'previous', 'created_at', 'updated_at']
     fields = ['status', 'category', 'type', 'title', 'slug', 'summary', 'body_md', 'event_at', 'tags', 'preview',
               'image', *[field for field in readonly_fields if field != 'preview']]
@@ -46,6 +46,14 @@ class PublicationAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # stories come from the pipeline
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).with_points()
+
+    @admin.display(description="readers' points", ordering='readers_points')
+    def readers_points(self, publication):
+        """rating minus the random start: what readers really gave"""
+        return publication.readers_points
 
     @admin.display(description='sources')
     def source_count(self, publication):

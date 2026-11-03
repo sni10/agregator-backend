@@ -10,5 +10,6 @@ urlpatterns = [
          name='publishing-image'),
     path('publishing/publications/<str:external_id>/tags', views.PublicationTagsView.as_view(),
          name='publishing-tags'),
+    path('publishing/reactions', views.ReactionView.as_view(), name='publishing-reactions'),
     path('health', views.health, name='health'),
 ]

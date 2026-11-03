@@ -1,22 +1,25 @@
 import hashlib
+import hmac
 import re
 from datetime import timedelta
 
+from django.conf import settings
 from django.core.cache import cache
 from django.contrib.postgres.search import SearchQuery, SearchRank, SearchVector, TrigramWordSimilarity
+from django.db import transaction
 from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.cache import patch_cache_control
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import generics, status
+from rest_framework import generics, serializers, status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from publications.models import Category, Favorite, LeadPick, Publication, Tag, TopStory
+from publications.models import Category, Favorite, LeadPick, Publication, Rating, Tag, TopStory
 
 from . import coins
 from .serializers import (CategorySerializer, HomeSerializer, PriceSerializer, PublicationDetailSerializer,
@@ -60,7 +63,7 @@ class HomeView(ReadView, APIView):
     """The front page in one request. The top story is the one an editor set (TopStory), else the one with the most
     sources among the newest; beside it the stories editors placed (LeadPick), the free places get the next newest;
     then the latest, then a block per category; a story shows up only once. Most read: the stories of the last days
-    readers opened most."""
+    readers opened most. Top rated: the stories of the last week readers gave the most like points."""
 
     CANDIDATES = 20  # the top story is picked among these newest
     BESIDE = LeadPick.PLACES  # stories beside the top story
@@ -68,6 +71,8 @@ class HomeView(ReadView, APIView):
     SECTION = 6
     MOST_READ = 5
     MOST_READ_WINDOW = timedelta(days=3)
+    TOP_RATED = 5
+    TOP_RATED_WINDOW = timedelta(days=7)
 
     @extend_schema(responses=HomeSerializer)
     def get(self, request):
@@ -89,7 +94,11 @@ class HomeView(ReadView, APIView):
 
         most_read = (published().filter(views__gt=0, published_at__gte=timezone.now() - self.MOST_READ_WINDOW)
                      .order_by('-views', *NEWEST)[:self.MOST_READ])
-        data = {'lead': lead, 'latest': latest, 'sections': sections, 'most_read': most_read}
+        top_rated = (published().with_points()
+                     .filter(readers_points__gt=0, published_at__gte=timezone.now() - self.TOP_RATED_WINDOW)
+                     .order_by('-readers_points', *NEWEST)[:self.TOP_RATED])
+        data = {'lead': lead, 'latest': latest, 'sections': sections, 'most_read': most_read,
+                'top_rated': top_rated}
         return Response(HomeSerializer(data, context={'request': request}).data)
 
 
@@ -212,7 +221,8 @@ class SearchPagination(FeedPagination):
     OpenApiParameter('category', str, description='it | ai | crypto'),
     OpenApiParameter('since', str, enum=list(SINCE), description='Published in the last day, week, month, year'),
     OpenApiParameter('sources', int, description='At least this many sources'),
-    OpenApiParameter('sort', str, enum=['relevance', 'newest'], description='Default: relevance (newest without q)'),
+    OpenApiParameter('sort', str, enum=['relevance', 'newest', 'top'],
+                     description="Default: relevance (newest without q); top: readers' like points"),
 ])
 class SearchView(ReadView, generics.ListAPIView):
     """Full-text search over published stories (PostgreSQL, English) with filters. When the words match nothing,
@@ -237,8 +247,12 @@ class SearchView(ReadView, generics.ListAPIView):
         text = params.get('q', '').strip()[:200]  # websearch syntax: "exact phrase", -word, or
         filtered = any(params.get(name) for name in ('category', 'since', 'sources'))
         newest = ('-published_at', '-id')
+        top = params.get('sort') == 'top'
         if not words(text):
-            return self.filtered().order_by(*newest) if filtered else Publication.objects.none()
+            if not filtered:
+                return Publication.objects.none()
+            return self.filtered().with_points().order_by('-readers_points', *newest) if top else \
+                self.filtered().order_by(*newest)
 
         query = SearchQuery(text, search_type='websearch', config='english')
         vector = SearchVector('title', 'summary', 'body_md', config='english')
@@ -249,6 +263,8 @@ class SearchView(ReadView, generics.ListAPIView):
                        .filter(rank__gte=FUZZY_MIN))
         if params.get('sort') == 'newest':
             return stories.order_by(*newest)
+        if top:
+            return stories.with_points().order_by('-readers_points', F('rank').desc(), *newest)
         return stories.order_by(F('rank').desc(), *newest)
 
 
@@ -335,3 +351,59 @@ class FavoriteView(Private, APIView):
     def delete(self, request, slug):
         Favorite.objects.filter(user=request.user, publication__slug=slug).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RatingSerializer(serializers.Serializer):
+    rating = serializers.IntegerField(read_only=True, help_text="The story's rating: all readers' points")
+    given = serializers.IntegerField(read_only=True, help_text="This reader's points for the story")
+    left = serializers.IntegerField(read_only=True, help_text='What they can still give, of 100')
+
+
+class RatingAddSerializer(serializers.Serializer):
+    points = serializers.IntegerField(min_value=1, max_value=Rating.MAX, help_text='One hold of the like button')
+
+
+class RatingView(APIView):
+    """Signed in or not. A guest is their IP: everyone behind one NAT shares the 100 points, a VPN hop gets new ones.
+    # ponytail: IP for guests, add a captcha or a guest cookie if farming shows up in the ratings."""
+
+    throttle_scope = 'rate'
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        patch_cache_control(response, private=True, no_store=True)  # the answer is this reader's
+        return response
+
+    def reader(self, request) -> dict:
+        if request.user.is_authenticated:
+            return {'user': request.user}
+        ip = ScopedRateThrottle().get_ident(request)
+        return {'user': None, 'guest': hmac.new(settings.SECRET_KEY.encode(), ip.encode(), 'sha256').hexdigest()}
+
+    def answer(self, publication, given):
+        return Response(RatingSerializer({'rating': publication.rating, 'given': given,
+                                          'left': Rating.MAX - given}).data)
+
+    @extend_schema(summary="The story's rating and this reader's points", responses={200: RatingSerializer})
+    def get(self, request, slug):
+        publication = get_object_or_404(Publication.objects.published(), slug=slug)
+        given = Rating.objects.filter(publication=publication, **self.reader(request)).values_list('points', flat=True)
+        return self.answer(publication, given.first() or 0)
+
+    @extend_schema(summary='Like a story: add the points of one hold, cut to what is left of the 100',
+                   request=RatingAddSerializer, responses={200: RatingSerializer, 404: None})
+    def post(self, request, slug):
+        data = RatingAddSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        publication = get_object_or_404(Publication.objects.published(), slug=slug)
+        with transaction.atomic():
+            reader = self.reader(request)
+            Rating.objects.get_or_create(publication=publication, **reader)
+            rating = Rating.objects.select_for_update().get(publication=publication, **reader)  # two tabs at once
+            added = min(data.validated_data['points'], Rating.MAX - rating.points)
+            if added:
+                rating.points += added
+                rating.save(update_fields=['points', 'updated_at'])
+                Publication.objects.filter(pk=publication.pk).update(rating=F('rating') + added)
+        publication.refresh_from_db(fields=['rating'])
+        return self.answer(publication, rating.points)

@@ -77,7 +77,7 @@ class PublicationListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publication
         fields = ['slug', 'type', 'category', 'title', 'summary', 'image', 'event_at', 'published_at',
-                  'source_count', 'publishers', 'views']
+                  'source_count', 'publishers', 'views', 'rating']
 
     def get_publishers(self, publication) -> list[str]:
         """Who wrote the sources, each once, in the story's order: the card names them."""
@@ -135,3 +135,5 @@ class HomeSerializer(serializers.Serializer):
     latest = PublicationListSerializer(many=True)
     sections = HomeSectionSerializer(many=True, help_text='A block per category, without the stories above')
     most_read = PublicationListSerializer(many=True, help_text='Of the last days; empty while nobody reads')
+    top_rated = PublicationListSerializer(many=True, help_text="Of the last week, by readers' like points (not "
+                                                               "the random start); empty while nobody likes")

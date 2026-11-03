@@ -83,3 +83,12 @@ class PublicationStateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publication
         fields = ['external_id', 'slug', 'status', 'revision', 'image', 'tags', 'published_at', 'updated_at']
+
+
+class ReactionSerializer(serializers.ModelSerializer):
+    points = serializers.IntegerField(source='readers_points', help_text="Readers' like points, up to 100 each")
+    readers = serializers.IntegerField(help_text='How many readers gave points')
+
+    class Meta:
+        model = Publication
+        fields = ['external_id', 'slug', 'published_at', 'points', 'readers', 'views']

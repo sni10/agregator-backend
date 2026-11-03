@@ -1,5 +1,6 @@
 """Stories on the site. They arrive from the local pipeline (publishing_api) and are read by the front (public_api).
 Source texts and embeddings stay on the owner's PC: here only what the site shows."""
+import random
 from datetime import timedelta
 
 from django.conf import settings
@@ -7,6 +8,8 @@ from django.contrib.postgres.indexes import GinIndex, OpClass
 from django.contrib.postgres.search import SearchVector
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Count, OuterRef, Subquery, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 
@@ -61,9 +64,21 @@ class Tag(models.Model):
         return self.name
 
 
+def starting_rating() -> int:
+    """A new story does not start at zero likes: 800..2500, the readers' points come on top."""
+    return random.randint(800, 2500)
+
+
 class PublicationQuerySet(models.QuerySet):
     def published(self):
         return self.filter(status=Publication.Status.PUBLISHED, published_at__lte=timezone.now())
+
+    def with_points(self):
+        """readers_points: the like points readers gave, without the random start in rating; readers: how many."""
+        def given(total):
+            return Coalesce(Subquery(Rating.objects.filter(publication=OuterRef('pk')).values('publication')
+                                     .annotate(total=total).values('total')), 0)
+        return self.annotate(readers_points=given(Sum('points')), readers=given(Count('id')))
 
 
 class Publication(models.Model):
@@ -99,6 +114,8 @@ class Publication(models.Model):
     tags = models.ManyToManyField(Tag, blank=True, related_name='publications')
     views = models.PositiveIntegerField(default=0, editable=False,
                                         help_text='Readers who opened it, once a day per IP; bots mostly left out')
+    rating = models.PositiveIntegerField(default=starting_rating, editable=False,
+                                         help_text="A random start plus readers' like points (Rating.points)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -173,6 +190,34 @@ class Favorite(models.Model):
 
     def __str__(self):
         return f'{self.user} / {self.publication}'
+
+
+class Rating(models.Model):
+    """The like points a reader gave a story: the held like button, up to MAX in all, over as many holds as they
+    like. A reader is a user or, signed out, a guest: their IP, kept only hashed. Publication.rating is a random start
+    plus their sum, kept in step by public_api (RatingView)."""
+
+    MAX = 100
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE,
+                             related_name='ratings')
+    guest = models.CharField(max_length=64, blank=True, help_text='Signed out: HMAC of the IP')
+    publication = models.ForeignKey(Publication, on_delete=models.CASCADE, related_name='ratings')
+    points = models.PositiveSmallIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'publication'], name='unique_rating_per_user'),
+            models.UniqueConstraint(fields=['guest', 'publication'], condition=models.Q(user__isnull=True),
+                                    name='unique_rating_per_guest'),
+            models.CheckConstraint(condition=models.Q(user__isnull=True) ^ models.Q(guest=''),
+                                   name='rating_user_or_guest'),
+            models.CheckConstraint(condition=models.Q(points__lte=100), name='rating_points_max'),
+        ]
+
+    def __str__(self):
+        return f'{self.user or "guest"} / {self.publication}: {self.points}'
 
 
 class PlacementQuerySet(models.QuerySet):

@@ -51,7 +51,8 @@ class HomeTests(TestCase):
         self.assertEqual(slugs(self.client.get('/home').data['most_read']), ['popular', 'read'])
 
     def test_empty_site(self):
-        self.assertEqual(self.client.get('/home').data, {'lead': [], 'latest': [], 'sections': [], 'most_read': []})
+        self.assertEqual(self.client.get('/home').data,
+                         {'lead': [], 'latest': [], 'sections': [], 'most_read': [], 'top_rated': []})
 
     def test_cards_name_the_publishers_once_each(self):
         add_sources(story('a'), 'Decrypt', 'Example', 'The Block')
